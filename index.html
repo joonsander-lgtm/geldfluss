@@ -566,7 +566,7 @@ function render(){
   $$('[data-tab]').forEach(b=>{b.classList.toggle('on',b.dataset.tab===TAB);b.setAttribute('aria-current',b.dataset.tab===TAB?'page':'false');});
   const main=$('#main');
   const titles={monate:['Deine Monate','Was reinkommt, was rausgeht und was an dich geht.'],fix:['Dein fester Monat','Feste Einnahmen und Fixkosten, und was davon übrig bleibt.'],ueberblick:['Überblick','Was du dir zahlen kannst und wie lange dein Geld reicht.'],planen:['Planen','Was ist drin, und was kostet es dich?']};
-  $('#hTitle').textContent=titles[TAB][0]; $('#hSub').textContent=titles[TAB][1];
+  $('#hTitle').textContent=greet(); $('#hSub').textContent=titles[TAB][1];
   if(SyncRef&&SyncRef.needLogin()) return rLogin(main);
   if(!S.start.month){
     $('#hTitle').textContent='Hallo!'; $('#hSub').textContent='Schön, dass du da bist.';
@@ -576,6 +576,14 @@ function render(){
   ({monate:rMonate,fix:rFix,ueberblick:rUeber,planen:rPlanen})[TAB](main);
   $$('[data-act="bal2"]').forEach(b=>b.onclick=()=>openBalance());
 }
+// Begrüßung je nach Tageszeit, mit Namen aus den Einstellungen
+function greet(){
+  const h=new Date().getHours(), name=String(S.settings.name||'').trim();
+  if(h<5||h>=22) return name?`Noch wach, ${name}?`:'Noch wach?';
+  const g=h<11?'Guten Morgen':h<17?'Guten Tag':'Guten Abend';
+  return name?`${g}, ${name}`:g;
+}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&S.start.month&&!(SyncRef&&SyncRef.needLogin())) $('#hTitle').textContent=greet();});
 function bannerHTML(){
   if(mIdx(nowM())<=mIdx(S.start.month)) return '';
   return `<div class="banner"><p><b>Neuer Monat.</b> Trag deinen Kontostand für ${mName(nowM())} ein, dann rechnet Geldfluss ab hier. Was aus ${mName(S.start.month)} noch offen ist, nimmst du dabei mit.</p><button class="btn" data-act="bal2">Kontostand eintragen</button></div>`;
@@ -1087,6 +1095,7 @@ function openSettings(){
   const sy=SyncRef&&SyncRef.on();
   openSheet('Einstellungen',`
     ${sy?`<div class="f"><label>Sync</label></div><div class="aside" style="display:flex;justify-content:space-between;align-items:center;gap:12px"><span style="min-width:0"><b style="font-weight:600;overflow-wrap:anywhere">${esc(SyncRef.email())}</b><small class="tiny" style="display:block">${SyncRef.statusText()}</small></span><button type="button" class="mini" id="syncNow">Jetzt abgleichen</button></div>`:''}
+    <div class="f"><label for="tName">Dein Name</label><input type="text" id="tName" value="${esc(st.name||'')}" placeholder="Für die Begrüßung oben" autocomplete="given-name"></div>
     <div class="f"><label>Darstellung</label>${chips('tTheme',[['auto','Wie das System'],['light','Hell'],['dark','Dunkel']],st.theme||'auto')}</div>
     <div class="f"><label for="tSal">Dein Gehalt pro Monat</label><div class="money"><input type="text" id="tSal" inputmode="decimal" value="${fmtIn(st.salary)}"></div></div>
     <p class="hint">Was du dir fürs Leben nimmst: Essen, Ausgehen, Alltag. Miete und Krankenkasse trägst du unter „Fix" als Privat-Kosten ein. Beides zusammen geht an dich.</p>
@@ -1104,7 +1113,7 @@ function openSettings(){
     <p class="hint" style="margin-top:10px">Deine Daten liegen nur in diesem Browser. Sicher ab und zu ein Backup, zum Beispiel in iCloud Drive. Backups aus älteren Versionen funktionieren auch.</p>
     ${sy?'<button class="del" id="logout" style="color:var(--ink2)">Abmelden</button>':''}
     <button class="del" id="reset">Alles löschen und neu anfangen</button>`,()=>{
-      st.theme=chipVal('tTheme'); applyTheme(st.theme); st.salary=n('tSal'); st.taxRate=n('tRate'); st.vatOn=ck('tVat');
+      st.name=v('tName').trim(); st.theme=chipVal('tTheme'); applyTheme(st.theme); st.salary=n('tSal'); st.taxRate=n('tRate'); st.vatOn=ck('tVat');
       const p=v('tPol').trim(); st.polster=p===''?null:parseNum(p);
       st.horizon=+v('tHor'); st.safeMonths=+v('tSafe'); save(); render();
     });
