@@ -326,6 +326,8 @@ button.stat{font:inherit;color:inherit;cursor:pointer}button.stat:hover{outline:
 
 .ttl .logo{flex:0 0 46px;width:46px;height:46px}
 @media(max-width:900px){.ttl .logo{flex-basis:38px;width:38px;height:38px}}
+
+.top p:empty{display:none}
 </style>
 </head>
 <body>
@@ -566,7 +568,7 @@ function render(){
   $$('[data-tab]').forEach(b=>{b.classList.toggle('on',b.dataset.tab===TAB);b.setAttribute('aria-current',b.dataset.tab===TAB?'page':'false');});
   const main=$('#main');
   const titles={monate:['Deine Monate','Was reinkommt, was rausgeht und was an dich geht.'],fix:['Dein fester Monat','Feste Einnahmen und Fixkosten, und was davon übrig bleibt.'],ueberblick:['Überblick','Was du dir zahlen kannst und wie lange dein Geld reicht.'],planen:['Planen','Was ist drin, und was kostet es dich?']};
-  $('#hTitle').textContent=greet(); $('#hSub').textContent=titles[TAB][1];
+  $('#hTitle').textContent=greet(); $('#hSub').textContent='';
   if(SyncRef&&SyncRef.needLogin()) return rLogin(main);
   if(!S.start.month){
     $('#hTitle').textContent='Hallo!'; $('#hSub').textContent='Schön, dass du da bist.';
