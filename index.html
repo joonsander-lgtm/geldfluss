@@ -287,6 +287,7 @@ svg text{font-family:var(--font);font-size:11.5px;fill:var(--mute)}
 .cfoot.wrap{gap:8px;flex-wrap:wrap}
 .cgrid{align-items:start}
 @media(max-width:560px){.item.planned{flex-wrap:wrap}.item.planned .t{flex:1 1 calc(100% - 40px)}.item.planned .badge{margin-left:24px}}
+.stat.hi .tiny.cover{font-weight:500;color:#fff;opacity:.92}
 .goal{margin:-4px 2px 12px;font-size:14px;color:var(--ink2)}
 .goal b{font-weight:600;color:var(--ink)}
 button.stat{font:inherit;color:inherit;cursor:pointer}button.stat:hover{outline:1.5px solid var(--line2)}
@@ -548,7 +549,7 @@ $$('[data-tab]').forEach(b=>b.onclick=()=>{setTab(b.dataset.tab);render();window
 $$('[data-act="bal"]').forEach(b=>b.onclick=()=>openBalance());
 $$('[data-act="set"]').forEach(b=>b.onclick=()=>openSettings());
 window.addEventListener('resize',()=>{if(TAB==='ueberblick'||TAB==='planen'){clearTimeout(window._rz);window._rz=setTimeout(render,150);}});
-const statusTxt={ok:'Im grünen Bereich',eng:'Unter deinem Polster',minus:'Im Minus'};
+const statusTxt={ok:'Im grünen Bereich',eng:'Nächster Monat nicht gedeckt',minus:'Im Minus'};
 const stTxt=r=>r.status!=='minus'?statusTxt[r.status]:(+S.settings.dispo&&!r.overDispo?'Im Dispo':(+S.settings.dispo?'Über dem Dispo-Limit':'Im Minus'));
 const ico=n=>`<svg class="i"><use href="#i-${n}"/></svg>`;
 const sg=v=>(v>0?'+':v<0?'−':'')+eur(Math.abs(v));
@@ -596,6 +597,9 @@ function rMonate(main){
   const exBiz=outs.filter(x=>x.cat==='biz'||x.cat==='invest'), exTax=outs.filter(x=>x.cat==='tax'), exPriv=outs.filter(x=>x.cat==='priv');
   const meTotal=sum(fpriv)+sum(exPriv.filter(x=>!x.plan))+r.sal;
   const need=fixMonth().need, got=sum(jobs.filter(x=>!x.plan));
+  // Ist der nächste Monat schon vorfinanziert? (Polster = Fixkosten des nächsten Monats, außer selbst eingestellt)
+  const pol=polster(), nextM=mName(mStr(mIdx(CUR)+1)), what=S.settings.polster==null?`Fixkosten ${nextM}`:'Polster';
+  const cov=r.end>=pol?`✓ ${what} gedeckt (${eur(pol)}) · frei ${eur(r.end-pol)}`:`${what}: es fehlen ${eur(pol-Math.max(r.end,0))}`;
   // Was du dir diesen Monat auszahlen kannst: das eingestellte Gehalt, außer das Konto fiele Ende des Monats unter dein Polster
   const canPay=Math.max(0,Math.min(r.sal,Math.floor((r.sal+r.end-polster())/10)*10));
   const fxRow=f=>{const key=keyF(f,CUR);return `<div class="item" data-fx="${f.id}" style="cursor:pointer">${paidBtn('pf',key,!!S.paidFixed[key],f.kind)}<span class="t"><b>${esc(f.name)}</b></span><span class="num" style="font-weight:600">${eurX(+f.amount)}</span></div>`;};
@@ -611,7 +615,7 @@ function rMonate(main){
       <span class="badge ${r.status}">${r.status==='ok'?'<span class="ok-ico">✓</span>':''}${stTxt(r)}</span>
       <span class="mpos">Monat ${k+1} von ${rows.length}</span></div>
     <div class="stats">
-      <div class="stat hi ${r.status}"><span class="lbl">Konto Ende ${mName(CUR)}</span><span class="val">${eur(r.end)}</span>${isStart?`<span class="tiny">ab ${eur(S.start.free)} am ${fmtDate(S.start.asOf)}</span>`:''}</div>
+      <div class="stat hi ${r.status}"><span class="lbl">Konto Ende ${mName(CUR)}</span><span class="val">${eur(r.end)}</span><span class="tiny cover">${cov}</span></div>
       <div class="stat"><span class="icirc sand">${ico('coin')}</span><div><div class="lbl">Plus/Minus im Monat</div><div class="val ${r.result<0?'neg':''}">${sg(r.result)}</div><div class="tiny">alles rein, alles raus</div></div></div>
       <div class="stat"><span class="icirc sage">${ico('in')}</span><div><div class="lbl">Einnahmen</div><div class="val">${eur(r.rein)}</div>${isStart?'<div class="tiny">was noch kommt</div>':''}</div></div>
       <div class="stat"><span class="icirc gray">${ico('out')}</span><div><div class="lbl">Ausgaben</div><div class="val">${eur(r.raus)}</div>${isStart?'<div class="tiny">was noch rausgeht</div>':''}</div></div>
@@ -799,7 +803,7 @@ function rUeber(main){
     ${stripHTML(rows,CUR)}
     <div class="cgrid2">
       <section class="card chart"><div class="chead"><h3>Dein Konto am Monatsende</h3><span class="badge ${firstMinus?'minus':firstEng?'eng':'ok'}">${firstMinus?'Minus in Sicht':firstEng?'Wird eng':'Auf Kurs'}</span></div>
-        <div class="keys"><span><i style="background:var(--sage)"></i>Gut</span><span><i style="background:var(--amber)"></i>Unter Polster</span><span><i style="background:var(--red)"></i>Minus</span><span><i class="dash"></i>Polster ${eur(pol)}</span></div>
+        <div class="keys"><span><i style="background:var(--sage)"></i>Gut</span><span><i style="background:var(--amber)"></i>Fixkosten nicht gedeckt</span><span><i style="background:var(--red)"></i>Minus</span><span><i class="dash"></i>${S.settings.polster==null?'Fixkosten nächster Monat':'Polster'} ${eur(pol)}</span></div>
         <div id="c1"></div><div class="tip" id="t1"></div></section>
       <section class="card chart"><div class="chead"><h3>Einnahmen und Ausgaben</h3><span class="sub">pro Monat</span></div>
         <div class="keys"><span><i style="background:var(--sage)"></i>Einnahmen</span><span><i style="background:var(--char)"></i>Ausgaben</span></div>
