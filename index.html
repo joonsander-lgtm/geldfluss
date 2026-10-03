@@ -1148,8 +1148,8 @@ const Sync=(()=>{
   const fail=e=>{if(e&&e.message==='auth') return; console.warn('Sync',e); setStatus(navigator.onLine===false?'offline':'error');};
   function dropToken(){token=null; try{localStorage.removeItem(TOK);}catch(e){}}
 
-  async function api(method,path,body,etag){
-    const h={'Content-Type':'application/json'}; if(token) h.Authorization='Bearer '+token; if(etag) h['x-geldfluss-etag']=etag;
+  async function api(method,path,body,ver){
+    const h={'Content-Type':'application/json'}; if(token) h.Authorization='Bearer '+token; if(ver) h['x-geldfluss-version']=ver;
     const r=await fetch('/api/'+path,{method,headers:h,body:body?JSON.stringify(body):undefined,cache:'no-store'});
     let j={}; try{j=await r.json();}catch(e){}
     if(r.status===401&&path!=='login'){dropToken(); setStatus('off'); render(); throw new Error('auth');}
@@ -1159,13 +1159,16 @@ const Sync=(()=>{
     if(!on) return;
     document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&token) pull();});
     window.addEventListener('online',()=>{if(token) pull();});
+    window.addEventListener('focus',()=>{if(token) pull();});
+    window.addEventListener('pageshow',()=>{if(token) pull();});
     window.addEventListener('offline',()=>{if(token) setStatus('offline');});
+    setInterval(()=>{if(token&&document.visibilityState==='visible') pull();},60000); // auch bei offenem Fenster jede Minute abgleichen
     if(token) pull();
   }
-  function apply(d,etag){
+  function apply(d,ver){
     quiet=true;
-    try{S=importData(d); normalize(); applyTheme(S.settings.theme); CUR=null; save();}finally{quiet=false;}
-    setMeta({remoteAt:etag,dirty:false});
+    try{S=importData(d); normalize(); applyTheme(S.settings.theme); save();}finally{quiet=false;}
+    setMeta({remoteAt:ver,dirty:false});
   }
   async function doPull(){
     if(!token) return;
@@ -1174,9 +1177,9 @@ const Sync=(()=>{
       if(r.status!==200) throw new Error('status '+r.status);
       if(d.unchanged){ if(m.dirty) return doPush(); setStatus('ok'); return; }   // nichts Neues in der Cloud
       if(!d.data){ if(S.start.month) return doPush(); setStatus('ok'); return; }  // Cloud leer: Daten von hier hochladen
-      if(d.etag===m.remoteAt){ if(m.dirty) return doPush(); setStatus('ok'); return; }
+      if(d.version===m.remoteAt){ if(m.dirty) return doPush(); setStatus('ok'); return; }
       if(m.dirty&&S.start.month) return conflict(d);                              // hier und dort geändert
-      apply(d.data,d.etag); setStatus('ok'); render();                            // anderes Gerät war neuer
+      apply(d.data,d.version); setStatus('ok'); if(!bd.classList.contains('on')) render();                            // anderes Gerät war neuer
     }catch(e){fail(e);}
   }
   async function doPush(){
@@ -1185,7 +1188,7 @@ const Sync=(()=>{
       const m=meta(), r=await api('PUT','state',{data:clean(),base:m.remoteAt||null});
       if(r.status===409) return conflict(r.body.current);
       if(r.status!==200) throw new Error('status '+r.status);
-      setMeta({remoteAt:r.body.etag,dirty:false}); setStatus('ok');
+      setMeta({remoteAt:r.body.version,dirty:false}); setStatus('ok');
     }catch(e){fail(e);}
   }
   function conflict(r){
@@ -1194,8 +1197,8 @@ const Sync=(()=>{
       <p class="lead" style="margin:0 2px 14px">Auf diesem Gerät gibt es Änderungen, die noch nicht in der Cloud sind. Gleichzeitig wurde in der Cloud${r.at?` am <b>${when(r.at)}</b>`:''} eine andere Version gespeichert, wahrscheinlich von deinem anderen Gerät.</p>
       <p class="hint">Welche willst du behalten? Die andere wird überschrieben. Wenn du unsicher bist: vorher unter Einstellungen ein Backup sichern.</p>
       <button type="button" class="ghost" id="keepLocal" style="width:100%;padding:14px;margin-bottom:8px">Die von diesem Gerät behalten</button>`,
-      ()=>{apply(r.data,r.etag); setStatus('ok'); render();},'Die aus der Cloud laden');
-    sh.querySelector('#keepLocal').onclick=()=>{setMeta({remoteAt:r.etag,dirty:true}); closeSheet(); push();};
+      ()=>{apply(r.data,r.version); setStatus('ok'); render();},'Die aus der Cloud laden');
+    sh.querySelector('#keepLocal').onclick=()=>{setMeta({remoteAt:r.version,dirty:true}); closeSheet(); push();};
   }
   const pull=()=>q(doPull), push=()=>q(doPush);
   function changed(){ if(quiet) return; setMeta({dirty:true}); if(on&&token){clearTimeout(timer); timer=setTimeout(push,800);} }
