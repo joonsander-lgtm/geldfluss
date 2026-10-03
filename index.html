@@ -352,7 +352,6 @@ button.stat{font:inherit;color:inherit;cursor:pointer}button.stat:hover{outline:
 </div>
 <div class="backdrop" id="bd"><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
 <script src="config.js"></script>
-<script src="supabase.js"></script>
 <script>
 var SyncRef=null; // wird unten gesetzt, wenn Sync eingerichtet ist
 /* ============ Grundlagen ============ */
@@ -1110,92 +1109,107 @@ function openSettings(){
 }
 
 
-/* ============ Sync (Supabase) ============ */
-// Ohne config.js oder ohne Supabase läuft Geldfluss wie bisher nur auf diesem Gerät.
+/* ============ Sync (eigene Vercel-Funktion + privater Blob-Speicher) ============ */
+// Ohne config.js läuft Geldfluss wie bisher nur auf diesem Gerät.
 const Sync=(()=>{
-  const cfg=window.GELDFLUSS_CONFIG||{}, on=!!(cfg.supabaseUrl&&cfg.supabaseKey&&window.supabase&&window.supabase.createClient);
-  const META='geldfluss.sync', TABLE='geldfluss_state';
+  const cfg=window.GELDFLUSS_CONFIG||{}, on=cfg.sync==='vercel';
+  const META='geldfluss.sync', TOK='geldfluss.token';
   const labels={ok:'Synchron',saving:'Wird gespeichert …',offline:'Offline. Wird synchronisiert, sobald du wieder online bist.',error:'Sync hat nicht geklappt',conflict:'Zwei Versionen, bitte wählen',off:''};
-  let sb=null, user=null, status='off', timer=null, quiet=false, chain=Promise.resolve();
+  let token=null, status='off', timer=null, quiet=false, chain=Promise.resolve();
+  try{token=localStorage.getItem(TOK);}catch(e){}
   const meta=()=>{try{return JSON.parse(localStorage.getItem(META))||{}}catch(e){return {}}};
   const setMeta=m=>{try{localStorage.setItem(META,JSON.stringify(Object.assign(meta(),m)))}catch(e){}};
   const q=fn=>(chain=chain.then(fn,fn));
-  const when=iso=>{try{return new Date(iso).toLocaleString('de-DE',{day:'numeric',month:'numeric',hour:'2-digit',minute:'2-digit'})}catch(e){return iso}};
+  const when=at=>{try{return new Date(at).toLocaleString('de-DE',{day:'numeric',month:'numeric',hour:'2-digit',minute:'2-digit'})}catch(e){return ''}};
   const clean=()=>JSON.parse(JSON.stringify(S,(k,v)=>k==='_open'?undefined:v));
   function setStatus(s){status=s; document.querySelectorAll('.syncdot').forEach(d=>{d.className='syncdot '+s; d.title=labels[s]||'';});}
-  const fail=e=>{console.warn('Sync',e); setStatus(navigator.onLine===false?'offline':'error');};
+  const fail=e=>{if(e&&e.message==='auth') return; console.warn('Sync',e); setStatus(navigator.onLine===false?'offline':'error');};
+  function dropToken(){token=null; try{localStorage.removeItem(TOK);}catch(e){}}
 
+  async function api(method,path,body,etag){
+    const h={'Content-Type':'application/json'}; if(token) h.Authorization='Bearer '+token; if(etag) h['x-geldfluss-etag']=etag;
+    const r=await fetch('/api/'+path,{method,headers:h,body:body?JSON.stringify(body):undefined,cache:'no-store'});
+    let j={}; try{j=await r.json();}catch(e){}
+    if(r.status===401&&path!=='login'){dropToken(); setStatus('off'); render(); throw new Error('auth');}
+    return {status:r.status,body:j};
+  }
   async function init(){
     if(!on) return;
-    sb=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseKey,{auth:{persistSession:true,autoRefreshToken:true,storageKey:'geldfluss.auth'}});
-    try{const {data}=await sb.auth.getSession(); user=data&&data.session?data.session.user:null;}catch(e){user=null;}
-    sb.auth.onAuthStateChange((_e,session)=>{user=session?session.user:null;});
-    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&user) pull();});
-    window.addEventListener('online',()=>{if(user) pull();});
-    window.addEventListener('offline',()=>{if(user) setStatus('offline');});
-    if(user) pull();
+    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&token) pull();});
+    window.addEventListener('online',()=>{if(token) pull();});
+    window.addEventListener('offline',()=>{if(token) setStatus('offline');});
+    if(token) pull();
   }
-  async function remote(){const {data,error}=await sb.from(TABLE).select('data,updated_at').eq('user_id',user.id).maybeSingle(); if(error) throw error; return data;}
-  function apply(d,at){
+  function apply(d,etag){
     quiet=true;
     try{S=importData(d); normalize(); applyTheme(S.settings.theme); CUR=null; save();}finally{quiet=false;}
-    setMeta({remoteAt:at,dirty:false});
+    setMeta({remoteAt:etag,dirty:false});
   }
   async function doPull(){
-    if(!user) return;
+    if(!token) return;
     try{
-      const r=await remote(), m=meta();
-      if(!r){ if(S.start.month) return doPush(); setStatus('ok'); return; }     // Cloud leer: Daten von hier hochladen
-      if(r.updated_at===m.remoteAt){ if(m.dirty) return doPush(); setStatus('ok'); return; }
-      if(m.dirty&&S.start.month) return conflict(r);                              // hier und dort geändert
-      apply(r.data,r.updated_at); setStatus('ok'); render();                      // anderes Gerät war neuer
+      const m=meta(), r=await api('GET','state',null,m.remoteAt), d=r.body;
+      if(r.status!==200) throw new Error('status '+r.status);
+      if(d.unchanged){ if(m.dirty) return doPush(); setStatus('ok'); return; }   // nichts Neues in der Cloud
+      if(!d.data){ if(S.start.month) return doPush(); setStatus('ok'); return; }  // Cloud leer: Daten von hier hochladen
+      if(d.etag===m.remoteAt){ if(m.dirty) return doPush(); setStatus('ok'); return; }
+      if(m.dirty&&S.start.month) return conflict(d);                              // hier und dort geändert
+      apply(d.data,d.etag); setStatus('ok'); render();                            // anderes Gerät war neuer
     }catch(e){fail(e);}
   }
   async function doPush(){
-    if(!user) return; setStatus('saving');
+    if(!token) return; setStatus('saving');
     try{
-      const m=meta(), r=await remote();
-      if(r&&r.updated_at!==m.remoteAt) return conflict(r);                        // ein anderes Gerät hat inzwischen gespeichert
-      const {data,error}=await sb.from(TABLE).upsert({user_id:user.id,data:clean()},{onConflict:'user_id'}).select('updated_at').single();
-      if(error) throw error;
-      setMeta({remoteAt:data.updated_at,dirty:false}); setStatus('ok');
+      const m=meta(), r=await api('PUT','state',{data:clean(),base:m.remoteAt||null});
+      if(r.status===409) return conflict(r.body.current);
+      if(r.status!==200) throw new Error('status '+r.status);
+      setMeta({remoteAt:r.body.etag,dirty:false}); setStatus('ok');
     }catch(e){fail(e);}
   }
   function conflict(r){
     setStatus('conflict');
     openSheet('Zwei Versionen',`
-      <p class="lead" style="margin:0 2px 14px">Auf diesem Gerät gibt es Änderungen, die noch nicht in der Cloud sind. Gleichzeitig wurde in der Cloud am <b>${when(r.updated_at)}</b> eine andere Version gespeichert, wahrscheinlich von deinem anderen Gerät.</p>
+      <p class="lead" style="margin:0 2px 14px">Auf diesem Gerät gibt es Änderungen, die noch nicht in der Cloud sind. Gleichzeitig wurde in der Cloud${r.at?` am <b>${when(r.at)}</b>`:''} eine andere Version gespeichert, wahrscheinlich von deinem anderen Gerät.</p>
       <p class="hint">Welche willst du behalten? Die andere wird überschrieben. Wenn du unsicher bist: vorher unter Einstellungen ein Backup sichern.</p>
       <button type="button" class="ghost" id="keepLocal" style="width:100%;padding:14px;margin-bottom:8px">Die von diesem Gerät behalten</button>`,
-      ()=>{apply(r.data,r.updated_at); setStatus('ok'); render();},'Die aus der Cloud laden');
-    sh.querySelector('#keepLocal').onclick=()=>{setMeta({remoteAt:r.updated_at,dirty:true}); closeSheet(); push();};
+      ()=>{apply(r.data,r.etag); setStatus('ok'); render();},'Die aus der Cloud laden');
+    sh.querySelector('#keepLocal').onclick=()=>{setMeta({remoteAt:r.etag,dirty:true}); closeSheet(); push();};
   }
   const pull=()=>q(doPull), push=()=>q(doPush);
-  function changed(){ if(quiet) return; setMeta({dirty:true}); if(on&&user){clearTimeout(timer); timer=setTimeout(push,800);} }
-  async function login(email,pw){const {data,error}=await sb.auth.signInWithPassword({email,password:pw}); if(error) throw error; user=data.user; await pull();}
-  async function logout(){
-    try{await sb.auth.signOut();}catch(e){}
-    user=null; clearTimeout(timer);
+  function changed(){ if(quiet) return; setMeta({dirty:true}); if(on&&token){clearTimeout(timer); timer=setTimeout(push,800);} }
+  async function login(pw){
+    const r=await api('POST','login',{password:pw});
+    if(r.status===503) throw new Error('not_configured');
+    if(r.status!==200||!r.body.token) throw new Error('wrong');
+    token=r.body.token; try{localStorage.setItem(TOK,token);}catch(e){}
+    await pull();
+  }
+  function logout(){
+    dropToken(); clearTimeout(timer);
     try{localStorage.removeItem(KEY); localStorage.removeItem(META);}catch(e){}
     S=blank(); normalize(); CUR=null; setStatus('off');
   }
-  return {on:()=>on, needLogin:()=>on&&!user, init, login, logout, pull, push, changed, email:()=>user?user.email:'', statusText:()=>labels[status]||''};
+  return {on:()=>on, needLogin:()=>on&&!token, init, login, logout, pull, push, changed, email:()=>'Angemeldet auf diesem Gerät', statusText:()=>labels[status]||''};
 })();
 SyncRef=Sync;
 
 function rLogin(main){
   $('#hTitle').textContent='Geldfluss'; $('#hSub').textContent='Melde dich an, dann sind deine Zahlen auf allen Geräten gleich.';
-  main.innerHTML=`<div class="card empty"><h3>Anmelden</h3><p>Mit dem Konto, das du in Supabase angelegt hast. Das machst du auf jedem Gerät nur einmal.</p>
+  main.innerHTML=`<div class="card empty"><h3>Anmelden</h3><p>Mit deinem Geldfluss-Passwort. Das machst du auf jedem Gerät nur einmal.</p>
     <form id="lf" autocomplete="on">
-      <div class="f"><label for="lE">E-Mail</label><input type="email" id="lE" autocomplete="username" autocapitalize="off" spellcheck="false"></div>
+      <input type="text" name="username" value="geldfluss" autocomplete="username" hidden>
       <div class="f"><label for="lP">Passwort</label><input type="password" id="lP" autocomplete="current-password"></div>
       <p class="hint" id="lErr" style="color:var(--red)"></p>
       <button class="save" type="submit" id="lBtn">Anmelden</button>
     </form></div>`;
   $('#lf').onsubmit=async e=>{
     e.preventDefault(); const b=$('#lBtn'); b.disabled=true; b.textContent='Einen Moment …'; $('#lErr').textContent='';
-    try{await Sync.login($('#lE').value.trim(),$('#lP').value); render();}
-    catch(err){$('#lErr').textContent=navigator.onLine===false?'Du bist offline. Für die erste Anmeldung brauchst du Internet.':'E-Mail oder Passwort stimmen nicht.'; b.disabled=false; b.textContent='Anmelden';}
+    try{await Sync.login($('#lP').value); render();}
+    catch(err){
+      $('#lErr').textContent=navigator.onLine===false?'Du bist offline. Für die erste Anmeldung brauchst du Internet.'
+        :err.message==='not_configured'?'Auf dem Server ist noch kein Passwort hinterlegt.':'Das Passwort stimmt nicht.';
+      b.disabled=false; b.textContent='Anmelden';
+    }
   };
 }
 
