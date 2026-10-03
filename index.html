@@ -319,6 +319,10 @@ button.stat{font:inherit;color:inherit;cursor:pointer}button.stat:hover{outline:
 .syncdot.error,.syncdot.conflict{display:block;background:var(--red)}
 .sheet{padding-bottom:calc(30px + env(safe-area-inset-bottom))}
 @media(max-width:620px){.topnav button span.syncdot{display:none}.topnav button span.syncdot.ok,.topnav button span.syncdot.saving,.topnav button span.syncdot.offline,.topnav button span.syncdot.error,.topnav button span.syncdot.conflict{display:block}}
+
+.topnav button.on.act{color:var(--card)}
+@media(max-width:1100px){.stats .stat.hi{order:0}.stats .s-in{order:1}.stats .s-pm{order:2}.stats .s-out{order:3}.stats .s-sal{order:4}}
+@media(max-width:620px){.topnav{gap:2px;padding:5px}.topnav .sep{display:none}.topnav button,.topnav button.icon{padding:9px 9px}.topnav button.on{padding:9px 14px}}
 </style>
 </head>
 <body>
@@ -616,10 +620,10 @@ function rMonate(main){
       <span class="mpos">Monat ${k+1} von ${rows.length}</span></div>
     <div class="stats">
       <div class="stat hi ${r.status}"><span class="lbl">Konto Ende ${mName(CUR)}</span><span class="val">${eur(r.end)}</span><span class="tiny cover">${cov}</span></div>
-      <div class="stat"><span class="icirc sand">${ico('coin')}</span><div><div class="lbl">Plus/Minus im Monat</div><div class="val ${r.result<0?'neg':''}">${sg(r.result)}</div><div class="tiny">alles rein, alles raus</div></div></div>
-      <div class="stat"><span class="icirc sage">${ico('in')}</span><div><div class="lbl">Einnahmen</div><div class="val">${eur(r.rein)}</div>${isStart?'<div class="tiny">was noch kommt</div>':''}</div></div>
-      <div class="stat"><span class="icirc gray">${ico('out')}</span><div><div class="lbl">Ausgaben</div><div class="val">${eur(r.raus)}</div>${isStart?'<div class="tiny">was noch rausgeht</div>':''}</div></div>
-      <button class="stat" id="salTile" style="text-align:left"><span class="icirc sand">${ico('leaf')}</span><div><div class="lbl">Dein Gehalt</div><div class="val ${canPay<r.sal?'warn':''}">${eur(canPay)}</div><div class="tiny">${canPay<r.sal?`eingestellt ${eur(r.sal)}, mehr gibt das Konto nicht her`:'passt diesen Monat'}</div></div></button>
+      <div class="stat s-pm"><span class="icirc sand">${ico('coin')}</span><div><div class="lbl">Plus/Minus im Monat</div><div class="val ${r.result<0?'neg':''}">${sg(r.result)}</div><div class="tiny">alles rein, alles raus</div></div></div>
+      <div class="stat s-in"><span class="icirc sage">${ico('in')}</span><div><div class="lbl">Einnahmen</div><div class="val">${eur(r.rein)}</div>${isStart?'<div class="tiny">was noch kommt</div>':''}</div></div>
+      <div class="stat s-out"><span class="icirc gray">${ico('out')}</span><div><div class="lbl">Ausgaben</div><div class="val">${eur(r.raus)}</div>${isStart?'<div class="tiny">was noch rausgeht</div>':''}</div></div>
+      <button class="stat s-sal" id="salTile" style="text-align:left"><span class="icirc sand">${ico('leaf')}</span><div><div class="lbl">Dein Gehalt</div><div class="val ${canPay<r.sal?'warn':''}">${eur(canPay)}</div><div class="tiny">${canPay<r.sal?`eingestellt ${eur(r.sal)}, mehr gibt das Konto nicht her`:'passt diesen Monat'}</div></div></button>
     </div>
     <div class="cols">
       <section class="card">
