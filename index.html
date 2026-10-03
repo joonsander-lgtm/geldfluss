@@ -328,6 +328,23 @@ button.stat{font:inherit;color:inherit;cursor:pointer}button.stat:hover{outline:
 @media(max-width:900px){.ttl .logo{flex-basis:38px;width:38px;height:38px}}
 
 .top p:empty{display:none}
+
+/* Seiten Kontostand & Einstellungen */
+.phead{margin:2px 2px 18px}
+.phead h2{font-size:28px}
+.phead p{color:var(--ink2);margin:6px 0 0;max-width:70ch}
+.pgrid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:start}
+.pcol{display:flex;flex-direction:column;gap:18px;min-width:0}
+.pagewrap .card .f input[type=text],.pagewrap .card .f select{background:var(--paper)}
+.pagewrap .card .chips button,.pagewrap .card .sw,.pagewrap .card .chk,.pagewrap .card .roll,.pagewrap .card .ghost{background:var(--paper)}
+.pagewrap .card .roll .chips button{background:var(--card)}
+.pagewrap .card .roll .chips button.on,.pagewrap .card .chips button.on{background:var(--char);color:var(--card)}
+.ghost.wide{display:block;width:100%;padding:12px}
+.pagefoot{position:sticky;bottom:0;padding:14px 0 calc(14px + env(safe-area-inset-bottom));background:linear-gradient(to top,var(--paper) 70%,transparent);margin-top:6px;z-index:5}
+.pagefoot .save{max-width:420px;display:block;margin:0 0 0 auto}
+#toast{position:fixed;left:50%;bottom:calc(28px + env(safe-area-inset-bottom));transform:translate(-50%,20px);background:var(--char);color:var(--card);padding:11px 18px;border-radius:999px;font-weight:600;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:60}
+#toast.on{opacity:1;transform:translate(-50%,0)}
+@media(max-width:900px){.pgrid2{grid-template-columns:1fr}.phead h2{font-size:24px}.pagefoot .save{max-width:none}}
 </style>
 </head>
 <body>
@@ -353,8 +370,8 @@ button.stat{font:inherit;color:inherit;cursor:pointer}button.stat:hover{outline:
         <button data-tab="planen"><svg class="i"><use href="#i-plan"/></svg><span>Planen</span></button>
         <i class="sep" aria-hidden="true"></i>
         <button data-tab="fix" class="act"><svg class="i"><use href="#i-fix"/></svg><span>Fix</span></button>
-        <button data-act="bal" class="act"><svg class="i"><use href="#i-wallet"/></svg><span>Kontostand</span></button>
-        <button data-act="set" class="act icon" aria-label="Einstellungen"><svg class="i"><use href="#i-gear"/></svg><span class="syncdot"></span></button>
+        <button data-tab="konto" class="act"><svg class="i"><use href="#i-wallet"/></svg><span>Konto</span></button>
+        <button data-tab="einstellungen" class="act icon" aria-label="Einstellungen"><svg class="i"><use href="#i-gear"/></svg><span class="syncdot"></span></button>
       </nav>
     </header>
     <main id="main"></main>
@@ -555,8 +572,6 @@ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 let TAB=(()=>{try{return sessionStorage.getItem('gf5.tab')||'monate'}catch(e){return 'monate'}})(), CUR=null;
 const setTab=t=>{TAB=t;try{sessionStorage.setItem('gf5.tab',TAB)}catch(e){}};
 $$('[data-tab]').forEach(b=>b.onclick=()=>{setTab(b.dataset.tab);render();window.scrollTo({top:0});});
-$$('[data-act="bal"]').forEach(b=>b.onclick=()=>openBalance());
-$$('[data-act="set"]').forEach(b=>b.onclick=()=>openSettings());
 window.addEventListener('resize',()=>{if(TAB==='ueberblick'||TAB==='planen'){clearTimeout(window._rz);window._rz=setTimeout(render,150);}});
 const statusTxt={ok:'Im grünen Bereich',eng:'Nächster Monat nicht gedeckt',minus:'Im Minus'};
 const stTxt=r=>r.status!=='minus'?statusTxt[r.status]:(+S.settings.dispo&&!r.overDispo?'Im Dispo':(+S.settings.dispo?'Über dem Dispo-Limit':'Im Minus'));
@@ -570,13 +585,15 @@ function render(){
   const titles={monate:['Deine Monate','Was reinkommt, was rausgeht und was an dich geht.'],fix:['Dein fester Monat','Feste Einnahmen und Fixkosten, und was davon übrig bleibt.'],ueberblick:['Überblick','Was du dir zahlen kannst und wie lange dein Geld reicht.'],planen:['Planen','Was ist drin, und was kostet es dich?']};
   $('#hTitle').textContent=greet(); $('#hSub').textContent='';
   if(SyncRef&&SyncRef.needLogin()) return rLogin(main);
+  if(TAB==='konto') return rKonto(main);
+  if(TAB==='einstellungen') return rSettings(main);
   if(!S.start.month){
     $('#hTitle').textContent='Hallo!'; $('#hSub').textContent='Schön, dass du da bist.';
     main.innerHTML=`<div class="card empty"><h3>Wie viel hast du gerade?</h3><p>Trag einmal den Stand deines Geschäftskontos ein. Danach legst du unter „Fix" deine festen Einnahmen und Kosten an, und Geldfluss rechnet dir jeden Monat vor, was du dir zahlen kannst.</p><button class="btn" id="go">Kontostand eintragen</button><p class="note">Hast du schon ein Backup? Über das Zahnrad kannst du es laden, auch aus älteren Versionen.</p></div>`;
-    $('#go').onclick=()=>openBalance(); return;
+    $('#go').onclick=()=>{setTab('konto');render();}; return;
   }
   ({monate:rMonate,fix:rFix,ueberblick:rUeber,planen:rPlanen})[TAB](main);
-  $$('[data-act="bal2"]').forEach(b=>b.onclick=()=>openBalance());
+  $$('[data-act="bal2"]').forEach(b=>b.onclick=()=>{setTab('konto');render();window.scrollTo({top:0});});
 }
 // Begrüßung je nach Tageszeit, mit Namen aus den Einstellungen
 function greet(){
@@ -909,13 +926,14 @@ function compareChart(el,tip,a,b,pol){
 }
 
 /* ============ Sheets ============ */
-const bd=$('#bd'), sh=$('#sheet');
+const bd=$('#bd'), SHEET=$('#sheet'); let sh=SHEET;
 function openSheet(title,html,onSave,saveLabel='Speichern'){
+  sh=SHEET;
   sh.innerHTML=`<div class="sh"><h3>${title}</h3><button data-close>Schließen</button></div>${html}<button class="save" data-save>${saveLabel}</button>`;
   bd.classList.add('on'); sh.scrollTop=0; sh.querySelector('[data-close]').onclick=closeSheet;
   sh.querySelector('[data-save]').onclick=()=>{if(onSave()===false)return;closeSheet();};
 }
-function closeSheet(){bd.classList.remove('on');sh.innerHTML='';}
+function closeSheet(){bd.classList.remove('on');SHEET.innerHTML='';sh=SHEET;}
 bd.onclick=e=>{if(e.target===bd)closeSheet();};
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&bd.classList.contains('on'))closeSheet();});
 const v=id=>sh.querySelector('#'+id).value, n=id=>parseNum(sh.querySelector('#'+id).value), ck=id=>{const e=sh.querySelector('#'+id);return !!(e&&e.checked);};
@@ -1028,8 +1046,17 @@ function openSalary(m){
   const r=sh.querySelector('#reset'); if(r) r.onclick=()=>{delete S.salaryByMonth[m];save();closeSheet();render();};
 }
 
+/* Seiten statt Pop-ups: Kontostand und Einstellungen. Die Formular-Helfer (v, n, ck, chipVal) lesen aus `sh`. */
+function openPage(main,html,onSave,label){
+  main.innerHTML=`<div class="pagewrap">${html}<div class="pagefoot"><button class="save" data-save>${label}</button></div></div>`;
+  sh=main.querySelector('.pagewrap');
+  sh.querySelector('[data-save]').onclick=()=>{onSave();};
+}
+let toastT=null;
+function toast(msg){let t=$('#toast'); if(!t){t=document.createElement('div'); t.id='toast'; document.body.appendChild(t);} t.textContent=msg; t.classList.add('on'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('on'),1800);}
+
 /* Kontostand */
-function openBalance(){
+function rKonto(main){
   const m=nowM(), st=S.start, same=st.month===m, rate=rateOf(), dispo0=+S.settings.dispo||0;
   // Offenes aus den Monaten seit dem letzten Eintrag
   const roll=[];
@@ -1039,36 +1066,47 @@ function openBalance(){
       for(const x of S.extras){if(x.plan||x.paid||x.month!==mm)continue; if(mm===st.month&&st.done.includes(keyX(x)))continue; roll.push({t:'x',o:x,mm,key:keyX(x)});}
     }
   }
-  // Posten in diesem Monat
   const cur=[...fixedIn(m).map(f=>({t:'f',o:f,key:keyF(f,m),on:!!S.paidFixed[keyF(f,m)]})),...extrasIn(m).map(x=>({t:'x',o:x,key:keyX(x),on:!!x.paid}))]
     .sort((a,b)=>(a.o.kind==='in'?0:1)-(b.o.kind==='in'?0:1));
   const sgn=o=>o.kind==='in'?'+':'−', kindTxt=o=>o.kind==='in'?'Einnahme':o.cat==='priv'?'Privat':o.cat==='tax'?'Steuer':o.cat==='invest'?'Anschaffung':'Business';
   const expect=same?expectedNow():null, sal=salaryOf(m), salPaid0=same?st.salPaid:0;
   const rollFrom=roll.length?[...new Set(roll.map(r=>mName(r.mm)))].join(', '):'';
-  openSheet('Kontostand eintragen',`
-    <p class="hint" style="margin:0 2px 16px">Trag ein, was gerade auf deinem Geschäftskonto steht, und hak ab, was davon diesen Monat schon gebucht ist. Dann zählt nichts doppelt.</p>
-    <div class="two">
-      <div class="f"><label for="bMain">Geschäftskonto</label><div class="money"><input type="text" id="bMain" inputmode="decimal" value="${same?fmtIn(st.main??st.free):''}" placeholder="0"></div></div>
-      <div class="f"><label for="bDispo">Dispo-Limit</label><div class="money"><input type="text" id="bDispo" inputmode="decimal" value="${dispo0?fmtIn(dispo0):''}" placeholder="0"></div></div>
-    </div>
-    <p class="hint">Genau wie in der Banking-App, auch im Minus. Ohne Steuer-Unterkonten und ohne Privatkonto.</p>
-    ${same&&Math.abs(expect-st.free)>0.5?`<div class="calc" style="background:var(--sand-soft)">Laut deinen Haken seit dem ${fmtDate(st.asOf)} müssten jetzt etwa <b>${eurX(expect)}</b> drauf sein.</div>`:''}
-    ${roll.length?`<div class="sect">Noch offen aus ${rollFrom}</div><p class="hint">Kommt das noch? Dann wandert es in den ${mName(m)}. Feste Kosten sind meist längst abgebucht, die stehen schon auf „erledigt". Tipp: Hak im Monat ab, was gebucht ist, dann bleibt diese Liste kurz.</p>${roll.map((r,i)=>`<div class="roll"><div class="top"><span><b>${esc(r.o.name)}</b> <small>${MN[mIdx(r.mm)%12]}</small></span><b class="num ${r.o.kind==='in'?'pos':''}">${sgn(r.o)}${eurX(+r.o.amount)}</b></div>${chips('rl'+i,[['come','Kommt noch'],['done','Ist erledigt']],r.t==='f'&&r.o.kind==='out'?'done':'come')}</div>`).join('')}`:''}
-    <div class="sect">Schon gebucht im ${mName(m)}?</div>
-    ${cur.map((r,i)=>`<label class="chk"><input type="checkbox" data-cur="${i}" ${r.on?'checked':''}><span>${esc(r.o.name)}<small>${kindTxt(r.o)}</small></span><b class="${r.o.kind==='in'?'pos':''}">${sgn(r.o)}${eurX(+r.o.amount)}</b></label>`).join('')||'<p class="hint">Für diesen Monat ist noch nichts eingetragen.</p>'}
-    <p class="hint" style="margin-top:8px">Was du schon aufs Privatkonto überwiesen hast, etwa für Miete oder Krankenkasse, zählt als gebucht.</p>
-    <div class="f" style="margin-top:14px"><label for="bSal">Gehalt, das im ${mName(m)} schon aufs Privatkonto ging</label><div class="money"><input type="text" id="bSal" inputmode="decimal" value="${salPaid0?fmtIn(salPaid0):''}" placeholder="0"></div></div>
-    <p class="hint">Eingeplant sind ${eur(sal)}. Der Rest wird noch abgezogen.</p>
-    <div class="calc" id="bCalc"></div>
-    <details class="aside"${st.ust!=null||st.est!=null?' open':''}><summary>Steuer-Unterkonten <span class="tiny">optional</span><span class="chev">›</span></summary>
-      <p class="hint" style="margin:10px 2px 12px">Fließt nicht in deinen Kontostand ein. Das Einkommensteuer-Konto ist dein Steuertopf: Steuerzahlungen gehen zuerst von dort.</p>
-      <div class="two">
-        <div class="f"><label for="bUst">Umsatzsteuer</label><div class="money"><input type="text" id="bUst" inputmode="decimal" value="${same?fmtIn(st.ust):''}" placeholder="0"></div></div>
-        <div class="f"><label for="bEst">Einkommensteuer</label><div class="money"><input type="text" id="bEst" inputmode="decimal" value="${same?fmtIn(st.est):''}" placeholder="${!same&&st.est!=null?'zuletzt '+fmtIn(st.est):'0'}"></div></div>
+  openPage(main,`
+    <div class="phead"><h2>Kontostand</h2><p>Trag ein, was gerade auf deinem Geschäftskonto steht, und hak ab, was diesen Monat schon gebucht ist. Dann zählt nichts doppelt.${same&&st.asOf?` Zuletzt eingetragen am ${fmtDate(st.asOf)}`:''}</p></div>
+    <div class="pgrid2">
+      <div class="pcol">
+        <section class="card">
+          <div class="chead"><h3>Was steht auf dem Konto?</h3></div>
+          <div class="two">
+            <div class="f"><label for="bMain">Geschäftskonto</label><div class="money"><input type="text" id="bMain" inputmode="decimal" value="${same?fmtIn(st.main??st.free):''}" placeholder="0"></div></div>
+            <div class="f"><label for="bDispo">Dispo-Limit</label><div class="money"><input type="text" id="bDispo" inputmode="decimal" value="${dispo0?fmtIn(dispo0):''}" placeholder="0"></div></div>
+          </div>
+          <p class="hint">Genau wie in der Banking-App, auch im Minus. Ohne Steuer-Unterkonten und ohne Privatkonto.</p>
+          ${same&&Math.abs(expect-st.free)>0.5?`<div class="calc" style="background:var(--sand-soft)">Laut deinen Haken seit dem ${fmtDate(st.asOf)} müssten jetzt etwa <b>${eurX(expect)}</b> drauf sein.</div>`:''}
+          <div class="calc" id="bCalc" style="margin-bottom:0"></div>
+        </section>
+        <section class="card">
+          <div class="chead"><h3>Steuer-Unterkonten</h3><span class="sub">optional</span></div>
+          <p class="hint" style="margin:0 2px 12px">Fließt nicht in deinen Kontostand ein. Das Einkommensteuer-Konto ist dein Steuertopf: Steuerzahlungen gehen zuerst von dort.</p>
+          <div class="two">
+            <div class="f"><label for="bUst">Umsatzsteuer</label><div class="money"><input type="text" id="bUst" inputmode="decimal" value="${same?fmtIn(st.ust):''}" placeholder="0"></div></div>
+            <div class="f"><label for="bEst">Einkommensteuer</label><div class="money"><input type="text" id="bEst" inputmode="decimal" value="${same?fmtIn(st.est):''}" placeholder="${!same&&st.est!=null?'zuletzt '+fmtIn(st.est):'0'}"></div></div>
+          </div>
+          <div class="calc" id="bTax" style="background:var(--sand-soft);margin-bottom:0"></div>
+        </section>
       </div>
-      <div class="calc" id="bTax" style="background:var(--sand-soft);margin-bottom:0"></div>
-    </details>`,()=>{
-      if(v('bMain').trim()===''){sh.querySelector('#bMain').focus();return false;}
+      <div class="pcol">
+        ${roll.length?`<section class="card"><div class="chead"><h3>Noch offen aus ${rollFrom}</h3></div><p class="hint" style="margin:0 2px 12px">Kommt das noch? Dann wandert es in den ${mName(m)}. Feste Kosten sind meist längst abgebucht und stehen schon auf „erledigt".</p>${roll.map((r,i)=>`<div class="roll"><div class="top"><span><b>${esc(r.o.name)}</b> <small>${MN[mIdx(r.mm)%12]}</small></span><b class="num ${r.o.kind==='in'?'pos':''}">${sgn(r.o)}${eurX(+r.o.amount)}</b></div>${chips('rl'+i,[['come','Kommt noch'],['done','Ist erledigt']],r.t==='f'&&r.o.kind==='out'?'done':'come')}</div>`).join('')}</section>`:''}
+        <section class="card">
+          <div class="chead"><h3>Schon gebucht im ${mName(m)}?</h3></div>
+          ${cur.map((r,i)=>`<label class="chk"><input type="checkbox" data-cur="${i}" ${r.on?'checked':''}><span>${esc(r.o.name)}<small>${kindTxt(r.o)}</small></span><b class="${r.o.kind==='in'?'pos':''}">${sgn(r.o)}${eurX(+r.o.amount)}</b></label>`).join('')||'<p class="hint">Für diesen Monat ist noch nichts eingetragen.</p>'}
+          <p class="hint" style="margin-top:8px">Was du schon aufs Privatkonto überwiesen hast, etwa für Miete oder Krankenkasse, zählt als gebucht.</p>
+          <div class="f" style="margin-top:16px"><label for="bSal">Gehalt, das im ${mName(m)} schon aufs Privatkonto ging</label><div class="money"><input type="text" id="bSal" inputmode="decimal" value="${salPaid0?fmtIn(salPaid0):''}" placeholder="0"></div></div>
+          <p class="hint" style="margin-bottom:0">Eingeplant sind ${eur(sal)}. Der Rest wird noch abgezogen.</p>
+        </section>
+      </div>
+    </div>`,()=>{
+      if(v('bMain').trim()===''){const e=sh.querySelector('#bMain'); e.focus(); e.scrollIntoView({block:'center'}); return;}
       const main=n('bMain'), ust=v('bUst').trim()===''?null:n('bUst'), est=v('bEst').trim()===''?null:n('bEst');
       S.settings.dispo=Math.abs(n('bDispo'));
       roll.forEach((r,i)=>{const c=chipVal('rl'+i), o=r.o;
@@ -1077,14 +1115,14 @@ function openBalance(){
       sh.querySelectorAll('[data-cur]').forEach(cb=>{const r=cur[+cb.dataset.cur]; if(r.t==='f'){if(cb.checked)S.paidFixed[r.key]=true; else delete S.paidFixed[r.key];} else r.o.paid=cb.checked;});
       const done=[...fixedIn(m).filter(f=>S.paidFixed[keyF(f,m)]).map(f=>keyF(f,m)),...extrasIn(m).filter(x=>x.paid).map(keyX)];
       S.start={month:m,asOf:today(),main,free:main,ust,est,tax:est??0,done,orig:done.slice(),salPaid:Math.max(0,n('bSal'))};
-      CUR=m; save(); render();
+      CUR=m; save(); setTab('monate'); render(); window.scrollTo({top:0}); toast('Kontostand übernommen');
     },'Übernehmen');
   const upd=()=>{
     const main=n('bMain'), d=Math.abs(n('bDispo'));
     sh.querySelector('#bCalc').innerHTML=`Damit rechnet Geldfluss: <b class="${main<0?'neg':''}">${eurX(main)}</b>`+
       (main<0?`<br><span style="color:var(--ink2)">Du bist im Dispo${d?`, Spielraum bis zum Limit: <b class="${d+main<0?'neg':''}">${eurX(d+main)}</b>`:''}.</span>`:d?`<br><span style="color:var(--ink2)">Mit Dispo hast du ${eurX(main+d)} Spielraum.</span>`:'');
     let net=0,vat=0; sh.querySelectorAll('[data-cur]').forEach(cb=>{const o=cur[+cb.dataset.cur].o; if(cb.checked&&o.kind==='in'){net+=+o.amount; vat+=S.settings.vatOn&&o.vat?o.amount*VAT:0;}});
-    sh.querySelector('#bTax').innerHTML=net?`Für deine abgehakten Einnahmen im ${mName(m)} gehören <b>${eurX(vat)}</b> aufs Umsatzsteuer- und <b>${eurX(rate*net)}</b> aufs Einkommensteuer-Konto. Schon verschoben?`:'Hak oben ab, was schon eingegangen ist, dann siehst du hier, was auf die Unterkonten gehört.';
+    sh.querySelector('#bTax').innerHTML=net?`Für deine abgehakten Einnahmen im ${mName(m)} gehören <b>${eurX(vat)}</b> aufs Umsatzsteuer- und <b>${eurX(rate*net)}</b> aufs Einkommensteuer-Konto. Schon verschoben?`:'Hak rechts ab, was schon eingegangen ist, dann siehst du hier, was auf die Unterkonten gehört.';
   };
   bindChips();
   ['bMain','bDispo'].forEach(i=>sh.querySelector('#'+i).addEventListener('input',upd));
@@ -1092,44 +1130,57 @@ function openBalance(){
 }
 
 /* Einstellungen */
-function openSettings(){
-  const st=S.settings;
-  const sy=SyncRef&&SyncRef.on();
-  openSheet('Einstellungen',`
-    ${sy?`<div class="f"><label>Sync</label></div><div class="aside" style="display:flex;justify-content:space-between;align-items:center;gap:12px"><span style="min-width:0"><b style="font-weight:600;overflow-wrap:anywhere">${esc(SyncRef.email())}</b><small class="tiny" style="display:block">${SyncRef.statusText()}</small></span><button type="button" class="mini" id="syncNow">Jetzt abgleichen</button></div>`:''}
-    <div class="f"><label for="tName">Dein Name</label><input type="text" id="tName" value="${esc(st.name||'')}" placeholder="Für die Begrüßung oben" autocomplete="given-name"></div>
-    <div class="f"><label>Darstellung</label>${chips('tTheme',[['auto','Wie das System'],['light','Hell'],['dark','Dunkel']],st.theme||'auto')}</div>
-    <div class="f"><label for="tSal">Dein Gehalt pro Monat</label><div class="money"><input type="text" id="tSal" inputmode="decimal" value="${fmtIn(st.salary)}"></div></div>
-    <p class="hint">Was du dir fürs Leben nimmst: Essen, Ausgehen, Alltag. Miete und Krankenkasse trägst du unter „Fix" als Privat-Kosten ein. Beides zusammen geht an dich.</p>
-    <div class="f"><label for="tRate">Steuerrücklage in Prozent vom Gewinn</label><input type="text" id="tRate" inputmode="decimal" value="${fmtIn(st.taxRate)}"></div>
-    <p class="hint">20 bis 30 % sind für die meisten Freelancer ein sicherer Wert. Frag im Zweifel deine Steuerberatung.</p>
-    ${sw('tVat','Ich stelle Rechnungen mit MwSt',st.vatOn,'Aus, wenn du Kleinunternehmer bist')}
-    <div class="three">
-      <div class="f"><label for="tPol">Polster</label><div class="money"><input type="text" id="tPol" inputmode="decimal" value="${fmtIn(st.polster)}" placeholder="${S.start.month?String(polster()):'0'}"></div></div>
-      <div class="f"><label for="tSafe">Gehalt absichern für</label><select id="tSafe">${[3,6,9,12].map(k=>`<option value="${k}" ${+(st.safeMonths||6)===k?'selected':''}>${k} Monate</option>`).join('')}</select></div>
-      <div class="f"><label for="tHor">Vorschau</label><select id="tHor">${[12,18,24].map(k=>`<option value="${k}" ${+st.horizon===k?'selected':''}>${k} Monate</option>`).join('')}</select></div>
-    </div>
-    <p class="hint">Polster: So viel soll am Monatsende mindestens auf dem Konto sein. Leer lassen heißt: einmal deine Fixkosten. „Gehalt absichern" legt fest, wie viele Monate „Gehalt möglich" vorausschaut.</p>
-    <div class="f"><label>Backup</label></div>
-    <div class="two"><button type="button" class="ghost" id="exp" style="padding:12px">Backup sichern</button><label class="ghost" style="padding:12px;text-align:center;cursor:pointer">Backup laden<input type="file" id="imp" accept="application/json,.json" hidden></label></div>
-    <p class="hint" style="margin-top:10px">Deine Daten liegen nur in diesem Browser. Sicher ab und zu ein Backup, zum Beispiel in iCloud Drive. Backups aus älteren Versionen funktionieren auch.</p>
-    ${sy?'<button class="del" id="logout" style="color:var(--ink2)">Abmelden</button>':''}
-    <button class="del" id="reset">Alles löschen und neu anfangen</button>`,()=>{
+function rSettings(main){
+  const st=S.settings, sy=SyncRef&&SyncRef.on();
+  openPage(main,`
+    <div class="phead"><h2>Einstellungen</h2></div>
+    <div class="pgrid2">
+      <div class="pcol">
+        <section class="card">
+          <div class="chead"><h3>Du</h3></div>
+          <div class="f"><label for="tName">Dein Name</label><input type="text" id="tName" value="${esc(st.name||'')}" placeholder="Für die Begrüßung oben" autocomplete="given-name"></div>
+          <div class="f" style="margin-bottom:0"><label>Darstellung</label>${chips('tTheme',[['auto','Wie das System'],['light','Hell'],['dark','Dunkel']],st.theme||'auto')}</div>
+        </section>
+        <section class="card">
+          <div class="chead"><h3>Deine Daten</h3>${sy?`<span class="sub">${SyncRef.statusText()}</span>`:''}</div>
+          ${sy?`<p class="hint" style="margin:0 2px 12px">Deine Zahlen liegen in deinem privaten Vercel-Speicher und sind auf allen Geräten gleich, auf denen du angemeldet bist.</p>
+          <button type="button" class="ghost wide" id="syncNow">Jetzt abgleichen</button>`:`<p class="hint" style="margin:0 2px 12px">Deine Daten liegen nur in diesem Browser.</p>`}
+          <div class="two" style="margin-top:8px"><button type="button" class="ghost wide" id="exp">Backup sichern</button><label class="ghost wide" style="text-align:center;cursor:pointer">Backup laden<input type="file" id="imp" accept="application/json,.json" hidden></label></div>
+          <p class="hint" style="margin-top:10px">Ein Backup ab und zu, zum Beispiel in iCloud Drive, schadet nie. Backups aus älteren Versionen funktionieren auch.</p>
+          ${sy?'<button class="del" id="logout" style="color:var(--ink2)">Abmelden</button>':''}
+          <button class="del" id="reset" style="margin-top:0">Alles löschen und neu anfangen</button>
+        </section>
+      </div>
+      <div class="pcol">
+        <section class="card">
+          <div class="chead"><h3>So rechnet Geldfluss</h3></div>
+          <div class="f"><label for="tSal">Dein Gehalt pro Monat</label><div class="money"><input type="text" id="tSal" inputmode="decimal" value="${fmtIn(st.salary)}"></div></div>
+          <p class="hint">Was du dir fürs Leben nimmst: Essen, Ausgehen, Alltag. Miete und Krankenkasse trägst du unter „Fix" als Privat-Kosten ein.</p>
+          <div class="f"><label for="tRate">Steuerrücklage in Prozent vom Gewinn</label><input type="text" id="tRate" inputmode="decimal" value="${fmtIn(st.taxRate)}"></div>
+          <p class="hint">20 bis 30 % sind für die meisten Freelancer ein sicherer Wert. Frag im Zweifel deine Steuerberatung.</p>
+          ${sw('tVat','Ich stelle Rechnungen mit MwSt',st.vatOn,'Aus, wenn du Kleinunternehmer bist')}
+          <div class="three">
+            <div class="f"><label for="tPol">Polster</label><div class="money"><input type="text" id="tPol" inputmode="decimal" value="${fmtIn(st.polster)}" placeholder="${S.start.month?String(polster()):'0'}"></div></div>
+            <div class="f"><label for="tSafe">Gehalt absichern</label><select id="tSafe">${[3,6,9,12].map(k=>`<option value="${k}" ${+(st.safeMonths||6)===k?'selected':''}>${k} Monate</option>`).join('')}</select></div>
+            <div class="f"><label for="tHor">Vorschau</label><select id="tHor">${[12,18,24].map(k=>`<option value="${k}" ${+st.horizon===k?'selected':''}>${k} Monate</option>`).join('')}</select></div>
+          </div>
+          <p class="hint" style="margin-bottom:0">Polster: So viel soll am Monatsende mindestens auf dem Konto sein. Leer heißt: die Fixkosten des nächsten Monats. „Gehalt absichern" legt fest, wie viele Monate „Gehalt möglich" vorausschaut.</p>
+        </section>
+      </div>
+    </div>`,()=>{
       st.name=v('tName').trim(); st.theme=chipVal('tTheme'); applyTheme(st.theme); st.salary=n('tSal'); st.taxRate=n('tRate'); st.vatOn=ck('tVat');
       const p=v('tPol').trim(); st.polster=p===''?null:parseNum(p);
-      st.horizon=+v('tHor'); st.safeMonths=+v('tSafe'); save(); render();
-    });
+      st.horizon=+v('tHor'); st.safeMonths=+v('tSafe'); save(); render(); toast('Gespeichert');
+    },'Speichern');
   bindChips(()=>applyTheme(chipVal('tTheme')));
-  sh.querySelector('[data-close]').addEventListener('click',()=>applyTheme(st.theme));
   sh.querySelector('#exp').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(S,(k,v)=>k==='_open'?undefined:v,2)],{type:'application/json'}));a.download='geldfluss-backup-'+today()+'.json';a.click();};
   sh.querySelector('#imp').onchange=e=>{const file=e.target.files[0];if(!file)return;const rd=new FileReader();rd.onload=()=>{try{
-    S=importData(JSON.parse(rd.result)); normalize(); applyTheme(S.settings.theme); CUR=null; save(); closeSheet(); render();
+    S=importData(JSON.parse(rd.result)); normalize(); applyTheme(S.settings.theme); CUR=null; save(); setTab('monate'); render(); window.scrollTo({top:0}); toast('Backup geladen');
   }catch(err){alert('Diese Datei ist kein Geldfluss-Backup.');}};rd.readAsText(file);};
-  sh.querySelector('#reset').onclick=()=>{if(confirm(sy?'Wirklich alles löschen? Auch in der Cloud, also auf allen Geräten.':'Wirklich alles löschen?')){S=blank();CUR=null;save();closeSheet();render();}};
-  const sn=sh.querySelector('#syncNow'); if(sn) sn.onclick=()=>{SyncRef.pull(); closeSheet();};
-  const lo=sh.querySelector('#logout'); if(lo) lo.onclick=async()=>{if(confirm('Abmelden? Deine Daten verschwinden von diesem Gerät, in der Cloud bleiben sie.')){await SyncRef.logout(); closeSheet(); render();}};
+  sh.querySelector('#reset').onclick=()=>{if(confirm(sy?'Wirklich alles löschen? Auch in der Cloud, also auf allen Geräten.':'Wirklich alles löschen?')){S=blank();CUR=null;save();setTab('konto');render();}};
+  const sn=sh.querySelector('#syncNow'); if(sn) sn.onclick=()=>{SyncRef.pull(); toast('Wird abgeglichen …');};
+  const lo=sh.querySelector('#logout'); if(lo) lo.onclick=()=>{if(confirm('Abmelden? Deine Daten verschwinden von diesem Gerät, in der Cloud bleiben sie.')){SyncRef.logout(); setTab('monate'); render();}};
 }
-
 
 /* ============ Sync (eigene Vercel-Funktion + privater Blob-Speicher) ============ */
 // Ohne config.js läuft Geldfluss wie bisher nur auf diesem Gerät.
@@ -1179,7 +1230,7 @@ const Sync=(()=>{
       if(!d.data){ if(S.start.month) return doPush(); setStatus('ok'); return; }  // Cloud leer: Daten von hier hochladen
       if(d.version===m.remoteAt){ if(m.dirty) return doPush(); setStatus('ok'); return; }
       if(m.dirty&&S.start.month) return conflict(d);                              // hier und dort geändert
-      apply(d.data,d.version); setStatus('ok'); if(!bd.classList.contains('on')) render();                            // anderes Gerät war neuer
+      apply(d.data,d.version); setStatus('ok'); if(!bd.classList.contains('on')&&TAB!=='konto'&&TAB!=='einstellungen') render();                            // anderes Gerät war neuer
     }catch(e){fail(e);}
   }
   async function doPush(){
