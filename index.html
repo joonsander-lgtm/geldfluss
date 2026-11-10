@@ -345,6 +345,16 @@ button.stat{font:inherit;color:inherit;cursor:pointer}button.stat:hover{outline:
 #toast{position:fixed;left:50%;bottom:calc(28px + env(safe-area-inset-bottom));transform:translate(-50%,20px);background:var(--char);color:var(--card);padding:11px 18px;border-radius:999px;font-weight:600;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:60}
 #toast.on{opacity:1;transform:translate(-50%,0)}
 @media(max-width:900px){.pgrid2{grid-template-columns:1fr}.phead h2{font-size:24px}.pagefoot .save{max-width:none}}
+
+.recon{background:var(--paper);border-radius:14px;padding:14px 16px;margin-top:12px;font-size:14px;color:var(--ink2);display:flex;flex-direction:column;gap:6px}
+.recon>b{color:var(--ink);font-weight:600;font-size:15px}
+.recon .rl{display:flex;justify-content:space-between;gap:10px;font-variant-numeric:tabular-nums}
+.recon .rl b{color:var(--ink);font-weight:600}
+.recon .rl.big{border-top:1px solid var(--line2);padding-top:8px;margin-top:2px;font-size:15px}
+.recon .rl.big span{color:var(--ink);font-weight:600}
+.recon.minus{background:var(--red-soft,#f6e4e1)}.recon.minus .rl.big b{color:var(--red)}
+.recon.plus{background:var(--sand-soft)}
+.recon.ok{background:var(--sage-soft)}.recon.ok .rl.big b{color:var(--sage-deep)}
 </style>
 </head>
 <body>
@@ -467,6 +477,7 @@ function normalize(){
   if(!S.salaryByMonth)S.salaryByMonth={}; if(!S.paidFixed)S.paidFixed={};
   const p=S.settings.polster; S.settings.polster=(p===''||p==null||!isFinite(+p))?null:+p;
   S.start.salPaid=+S.start.salPaid||0;
+  if(!Array.isArray(S.recon)) S.recon=[];
 }
 normalize();
 function applyTheme(t){const r=document.documentElement;if(t==='light'||t==='dark')r.dataset.theme=t;else delete r.dataset.theme;}
@@ -567,6 +578,26 @@ function expectedNow(){
   return v;
 }
 
+// Abgleich: Was müsste laut Plan seit dem letzten Kontostand jetzt auf dem Konto sein?
+// paidOf(key,item,month) sagt, ob ein Posten (nach den Haken im Formular) bezahlt ist; salNow = Gehalt, das diesen Monat schon raus ist.
+function planExpected(paidOf,salNow){
+  const st=S.start, m=nowM(), rate=rateOf(); if(!st.month) return null;
+  let cash=+st.free||0, pot=(st.est==null||st.est==='')?0:+st.est;
+  for(let i=mIdx(st.month);i<=mIdx(m);i++){const mm=mStr(i);
+    let inc=0,bizNet=0,out=0,taxPaid=0;
+    const take=(key,o)=>{ if(o.plan||(mm===st.month&&st.done.includes(key))||!paidOf(key,o,mm)) return;
+      const a=+o.amount||0;
+      if(o.kind==='in') inc+=a; else if(o.cat==='tax') taxPaid+=a; else { out+=a; if(o.cat==='biz') bizNet+=netOf(a,o.vat); } };
+    for(const f of S.fixed) if(isOn(f,mm)) take(keyF(f,mm),f);
+    for(const x of S.extras) if(x.month===mm) take(keyX(x),x);
+    const res=Math.max(0,rate*(inc-bizNet)); pot+=res;
+    const fromPot=Math.min(pot,taxPaid); pot-=fromPot;
+    const salDone=mm===st.month?(+st.salPaid||0):0;
+    const sal=mm<m?Math.max(0,salaryOf(mm)-salDone):Math.max(0,salNow-salDone);
+    cash+=inc-res-out-(taxPaid-fromPot)-sal;
+  }
+  return cash;
+}
 /* ============ Ansicht ============ */
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 let TAB=(()=>{try{return sessionStorage.getItem('gf5.tab')||'monate'}catch(e){return 'monate'}})(), CUR=null;
@@ -1069,8 +1100,13 @@ function rKonto(main){
   const cur=[...fixedIn(m).map(f=>({t:'f',o:f,key:keyF(f,m),on:!!S.paidFixed[keyF(f,m)]})),...extrasIn(m).map(x=>({t:'x',o:x,key:keyX(x),on:!!x.paid}))]
     .sort((a,b)=>(a.o.kind==='in'?0:1)-(b.o.kind==='in'?0:1));
   const sgn=o=>o.kind==='in'?'+':'−', kindTxt=o=>o.kind==='in'?'Einnahme':o.cat==='priv'?'Privat':o.cat==='tax'?'Steuer':o.cat==='invest'?'Anschaffung':'Business';
-  const expect=same?expectedNow():null, sal=salaryOf(m), salPaid0=same?st.salPaid:0;
+  const sal=salaryOf(m), salPaid0=same?st.salPaid:0;
   const rollFrom=roll.length?[...new Set(roll.map(r=>mName(r.mm)))].join(', '):'';
+  const formPaid=()=>{const ov={};
+    roll.forEach((r,i)=>{ov[r.key]=chipVal('rl'+i)==='done';});
+    sh.querySelectorAll('[data-cur]').forEach(cb=>{ov[cur[+cb.dataset.cur].key]=cb.checked;});
+    return (key,o)=>key in ov?ov[key]:(key.startsWith('x:')?!!o.paid:!!S.paidFixed[key]);};
+  const since=st.asOf?`seit dem ${fmtDate(st.asOf)}`:`seit ${mName(st.month||m)}`;
   openPage(main,`
     <div class="phead"><h2>Kontostand</h2><p>Trag ein, was gerade auf deinem Geschäftskonto steht, und hak ab, was diesen Monat schon gebucht ist. Dann zählt nichts doppelt.${same&&st.asOf?` Zuletzt eingetragen am ${fmtDate(st.asOf)}`:''}</p></div>
     <div class="pgrid2">
@@ -1082,8 +1118,8 @@ function rKonto(main){
             <div class="f"><label for="bDispo">Dispo-Limit</label><div class="money"><input type="text" id="bDispo" inputmode="decimal" value="${dispo0?fmtIn(dispo0):''}" placeholder="0"></div></div>
           </div>
           <p class="hint">Genau wie in der Banking-App, auch im Minus. Ohne Steuer-Unterkonten und ohne Privatkonto.</p>
-          ${same&&Math.abs(expect-st.free)>0.5?`<div class="calc" style="background:var(--sand-soft)">Laut deinen Haken seit dem ${fmtDate(st.asOf)} müssten jetzt etwa <b>${eurX(expect)}</b> drauf sein.</div>`:''}
-          <div class="calc" id="bCalc" style="margin-bottom:0"></div>
+          <div class="calc" id="bCalc"></div>
+          ${st.month?`<div class="recon" id="bRecon"></div>`:''}
         </section>
         <section class="card">
           <div class="chead"><h3>Steuer-Unterkonten</h3><span class="sub">optional</span></div>
@@ -1094,6 +1130,8 @@ function rKonto(main){
           </div>
           <div class="calc" id="bTax" style="background:var(--sand-soft);margin-bottom:0"></div>
         </section>
+        ${(S.recon||[]).length?`<section class="card"><div class="chead"><h3>Bisherige Abgleiche</h3><span class="sub">ohne Eintrag</span></div>
+          <div class="rows">${S.recon.slice(-6).reverse().map(r=>`<div class="item"><span class="t"><b>${r.since?fmtDate(r.since)+' – ':''}${fmtDate(r.date)}</b><small>erwartet ${eur(r.expected)} · auf dem Konto ${eur(r.actual)}</small></span><span class="badge ${r.diff<0?'out':'in'}">${sg(r.diff)}</span></div>`).join('')}</div></section>`:''}
       </div>
       <div class="pcol">
         ${roll.length?`<section class="card"><div class="chead"><h3>Noch offen aus ${rollFrom}</h3></div><p class="hint" style="margin:0 2px 12px">Kommt das noch? Dann wandert es in den ${mName(m)}. Feste Kosten sind meist längst abgebucht und stehen schon auf „erledigt".</p>${roll.map((r,i)=>`<div class="roll"><div class="top"><span><b>${esc(r.o.name)}</b> <small>${MN[mIdx(r.mm)%12]}</small></span><b class="num ${r.o.kind==='in'?'pos':''}">${sgn(r.o)}${eurX(+r.o.amount)}</b></div>${chips('rl'+i,[['come','Kommt noch'],['done','Ist erledigt']],r.t==='f'&&r.o.kind==='out'?'done':'come')}</div>`).join('')}</section>`:''}
@@ -1107,6 +1145,8 @@ function rKonto(main){
       </div>
     </div>`,()=>{
       if(v('bMain').trim()===''){const e=sh.querySelector('#bMain'); e.focus(); e.scrollIntoView({block:'center'}); return;}
+      const exp0=st.month?planExpected(formPaid(),Math.max(0,n('bSal'))):null, act0=n('bMain'), diff0=exp0==null?null:Math.round(act0-exp0);
+      if(diff0!=null&&Math.abs(diff0)>=1){S.recon=(S.recon||[]).concat([{date:today(),since:st.asOf||null,expected:Math.round(exp0),actual:Math.round(act0),diff:diff0}]).slice(-24);}
       const main=n('bMain'), ust=v('bUst').trim()===''?null:n('bUst'), est=v('bEst').trim()===''?null:n('bEst');
       S.settings.dispo=Math.abs(n('bDispo'));
       roll.forEach((r,i)=>{const c=chipVal('rl'+i), o=r.o;
@@ -1115,17 +1155,32 @@ function rKonto(main){
       sh.querySelectorAll('[data-cur]').forEach(cb=>{const r=cur[+cb.dataset.cur]; if(r.t==='f'){if(cb.checked)S.paidFixed[r.key]=true; else delete S.paidFixed[r.key];} else r.o.paid=cb.checked;});
       const done=[...fixedIn(m).filter(f=>S.paidFixed[keyF(f,m)]).map(f=>keyF(f,m)),...extrasIn(m).filter(x=>x.paid).map(keyX)];
       S.start={month:m,asOf:today(),main,free:main,ust,est,tax:est??0,done,orig:done.slice(),salPaid:Math.max(0,n('bSal'))};
-      CUR=m; save(); setTab('monate'); render(); window.scrollTo({top:0}); toast('Kontostand übernommen');
+      CUR=m; save(); setTab('monate'); render(); window.scrollTo({top:0}); toast(diff0!=null&&diff0<=-5?`Übernommen · ${eur(-diff0)} ohne Eintrag rausgegangen`:diff0!=null&&diff0>=5?`Übernommen · ${eur(diff0)} mehr als geplant`:'Kontostand übernommen');
     },'Übernehmen');
   const upd=()=>{
     const main=n('bMain'), d=Math.abs(n('bDispo'));
     sh.querySelector('#bCalc').innerHTML=`Damit rechnet Geldfluss: <b class="${main<0?'neg':''}">${eurX(main)}</b>`+
       (main<0?`<br><span style="color:var(--ink2)">Du bist im Dispo${d?`, Spielraum bis zum Limit: <b class="${d+main<0?'neg':''}">${eurX(d+main)}</b>`:''}.</span>`:d?`<br><span style="color:var(--ink2)">Mit Dispo hast du ${eurX(main+d)} Spielraum.</span>`:'');
+    const rb=sh.querySelector('#bRecon');
+    if(rb){
+      if(v('bMain').trim()===''){rb.innerHTML=`<b>Abgleich</b><span>Trag deinen Kontostand ein, dann siehst du, ob ${since} etwas ohne Eintrag rausgegangen ist.</span>`; rb.className='recon';}
+      else{
+        const ex=planExpected(formPaid(),Math.max(0,n('bSal'))), df=main-ex, k=df<=-5?'minus':df>=5?'plus':'ok';
+        rb.className='recon '+k;
+        rb.innerHTML=`<b>Abgleich ${since}</b>
+          <div class="rl"><span>Laut Plan erwartet</span><b>${eurX(ex)}</b></div>
+          <div class="rl"><span>Auf dem Konto</span><b>${eurX(main)}</b></div>
+          <div class="rl big"><span>${k==='minus'?'Ohne Eintrag rausgegangen':k==='plus'?'Mehr als geplant':'Passt'}</span><b>${k==='ok'?'✓':(k==='minus'?'−':'+')+eurX(Math.abs(df))}</b></div>
+          <span>${k==='minus'?'Das sind Ausgaben, die du nicht eingetragen hast. Musst du nicht nachtragen, ab hier rechnet Geldfluss mit dem echten Kontostand.'
+            :k==='plus'?'Oft heißt das: Etwas ist abgehakt, das schon vor dem letzten Kontostand bezahlt war, eine Einnahme ist noch nicht abgehakt, oder die Steuerrücklage liegt noch auf dem Geschäftskonto.'
+            :'Deine Einträge und dein Konto stimmen überein.'}</span>`;
+      }
+    }
     let net=0,vat=0; sh.querySelectorAll('[data-cur]').forEach(cb=>{const o=cur[+cb.dataset.cur].o; if(cb.checked&&o.kind==='in'){net+=+o.amount; vat+=S.settings.vatOn&&o.vat?o.amount*VAT:0;}});
     sh.querySelector('#bTax').innerHTML=net?`Für deine abgehakten Einnahmen im ${mName(m)} gehören <b>${eurX(vat)}</b> aufs Umsatzsteuer- und <b>${eurX(rate*net)}</b> aufs Einkommensteuer-Konto. Schon verschoben?`:'Hak rechts ab, was schon eingegangen ist, dann siehst du hier, was auf die Unterkonten gehört.';
   };
-  bindChips();
-  ['bMain','bDispo'].forEach(i=>sh.querySelector('#'+i).addEventListener('input',upd));
+  bindChips(upd);
+  ['bMain','bDispo','bSal'].forEach(i=>sh.querySelector('#'+i).addEventListener('input',upd));
   sh.querySelectorAll('[data-cur]').forEach(cb=>cb.addEventListener('change',upd)); upd();
 }
 
