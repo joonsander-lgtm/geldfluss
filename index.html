@@ -355,6 +355,18 @@ button.stat{font:inherit;color:inherit;cursor:pointer}button.stat:hover{outline:
 .recon.minus{background:var(--red-soft,#f6e4e1)}.recon.minus .rl.big b{color:var(--red)}
 .recon.plus{background:var(--sand-soft)}
 .recon.ok{background:var(--sage-soft)}.recon.ok .rl.big b{color:var(--sage-deep)}
+
+.why{display:inline-grid;place-items:center;width:17px;height:17px;border-radius:50%;font-size:11px;font-weight:700;background:var(--line2);color:var(--ink2);margin-left:4px;vertical-align:1px}
+.stat.hi .why{background:rgba(255,255,255,.25);color:#fff}
+.explain .lead{font-size:15px;margin:0 2px 14px;color:var(--ink2)}
+.explain .bill{background:var(--paper);border-radius:14px;padding:6px 14px}
+.explain .ln{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+.explain .ln:last-child{border-bottom:0}
+.explain .ln b{font-weight:600}
+.explain .ln.mid b,.explain .ln.end b{font-weight:700}
+.explain .ln.end{border-top:1.5px solid var(--line2)}
+.explain .ln.neg b{color:var(--red)} .explain .ln.pos b{color:var(--sage-deep)}
+.explain .hint{margin-top:12px}
 </style>
 </head>
 <body>
@@ -375,8 +387,8 @@ button.stat{font:inherit;color:inherit;cursor:pointer}button.stat:hover{outline:
     <header class="top">
       <div class="ttl"><svg class="logo" width="46" height="46" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="20" fill="var(--sage)"/><path d="M9 16c3.7-3.7 7.3 3.7 11 0s7.3 3.7 11 0M9 24c3.7-3.7 7.3 3.7 11 0s7.3 3.7 11 0" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/></svg><div><h1 id="hTitle">Geldfluss</h1><p id="hSub">Deine Finanzen als Freelancer, Monat für Monat.</p></div></div>
       <nav class="topnav" aria-label="Navigation">
-        <button data-tab="monate"><svg class="i"><use href="#i-cal"/></svg><span>Monate</span></button>
         <button data-tab="ueberblick"><svg class="i"><use href="#i-chart"/></svg><span>Überblick</span></button>
+        <button data-tab="monate"><svg class="i"><use href="#i-cal"/></svg><span>Monate</span></button>
         <button data-tab="planen"><svg class="i"><use href="#i-plan"/></svg><span>Planen</span></button>
         <i class="sep" aria-hidden="true"></i>
         <button data-tab="fix" class="act"><svg class="i"><use href="#i-fix"/></svg><span>Fix</span></button>
@@ -417,7 +429,7 @@ const sum=l=>l.reduce((a,o)=>a+(+o.amount||0),0);
 const oftenTxt={1:'monatlich',3:'alle 3 Monate',6:'alle 6 Monate',12:'jährlich'};
 
 /* ============ Daten ============ */
-function blank(){return {v:5,settings:{salary:1000,taxRate:20,vatOn:true,polster:null,horizon:12,theme:'auto',dispo:0,safeMonths:6},
+function blank(){return {v:5,settings:{salary:1000,minimum:0,taxRate:20,vatOn:true,polster:null,horizon:12,theme:'auto',dispo:0,safeMonths:6},
   start:{month:null,asOf:null,main:0,free:0,ust:null,est:null,tax:0,done:[],orig:[],salPaid:0},salaryByMonth:{},fixed:[],extras:[],paidFixed:{}};}
 function fromV2(o){
   const st=o.settings||{}, N=blank(); N.v=4;
@@ -478,6 +490,11 @@ function normalize(){
   const p=S.settings.polster; S.settings.polster=(p===''||p==null||!isFinite(+p))?null:+p;
   S.start.salPaid=+S.start.salPaid||0;
   if(!Array.isArray(S.recon)) S.recon=[];
+  if(!Array.isArray(S.start.notYet)) S.start.notYet=[];
+  // Vereinfacht: diese Regler gibt es nicht mehr, sie sind fest
+  Object.assign(S.settings,{safeMonths:6,horizon:12,polster:null,dispo:0});
+  S.settings.minimum=Math.max(0,+S.settings.minimum||0);
+  S.extras.forEach(x=>{if(x.cat==='invest') x.cat='biz';});
 }
 normalize();
 function applyTheme(t){const r=document.documentElement;if(t==='light'||t==='dark')r.dataset.theme=t;else delete r.dataset.theme;}
@@ -497,12 +514,15 @@ const extrasIn=m=>S.extras.filter(x=>live(x)&&x.month===m);
 const keyF=(f,m)=>f.id+'|'+m, keyX=x=>'x:'+x.id;
 // Steckt dieser Posten schon im eingetragenen Kontostand? (nur im Startmonat)
 const inBalance=(key,m)=>m===S.start.month&&S.start.done.includes(key);
+// Fixkosten mit Abbuchungstag vor dem Kontostand-Datum stecken automatisch schon im Kontostand
+const autoIn=(f,m)=>m===S.start.month&&f.kind==='out'&&!!f.day&&!!S.start.asOf&&+f.day<=+S.start.asOf.slice(8,10)&&!(S.start.notYet||[]).includes(keyF(f,m));
+const isPaidF=(f,m)=>!!S.paidFixed[keyF(f,m)]||autoIn(f,m);
 
 function calc(m){
   const rate=rateOf();
   // all = ganzer Monat, c = was ab dem Kontostand noch aufs Konto wirkt
   const c={fixIn:0,jobs:0,bizOut:0,invest:0,priv:0,bizNet:0,taxPaid:0}, all={inc:0,bizNet:0,out:0};
-  for(const f of fixedIn(m)){const a=+f.amount, done=inBalance(keyF(f,m),m);
+  for(const f of fixedIn(m)){const a=+f.amount, done=inBalance(keyF(f,m),m)||autoIn(f,m);
     if(f.kind==='in'){all.inc+=a; if(!done) c.fixIn+=a;}
     else if(f.cat==='priv'){all.out+=a; if(!done) c.priv+=a;}
     else {const n=netOf(a,f.vat); all.bizNet+=n; all.out+=a; if(!done){c.bizOut+=a;c.bizNet+=n;}}}
@@ -517,11 +537,9 @@ function calc(m){
   c.taxAll=Math.max(0,rate*c.profit);
   return c;
 }
-function polster(){
-  if(S.settings.polster!=null) return +S.settings.polster;
-  const m=mStr(mIdx(S.start.month)+1);
-  return Math.round(S.fixed.filter(f=>live(f)&&f.kind==='out'&&isActive(f,m)).reduce((a,f)=>a+f.amount/(+f.interval||1),0)/10)*10;
-}
+// Polster = Fixkosten eines Monats (Business + Privat) + dein Minimum zum Leben
+const fixOut=()=>{const m=mStr(mIdx(S.start.month)+1); return S.fixed.filter(f=>live(f)&&f.kind==='out'&&isActive(f,m)).reduce((a,f)=>a+f.amount/(+f.interval||1),0);};
+function polster(){ return Math.round(fixOut()+(+S.settings.minimum||0)); }
 function simulate(u=null,flat=false,h=null){
   let bal=+S.start.free||0, pot=(S.start.est==null||S.start.est==='')?0:+S.start.est;
   const pol=polster(), dsp=+S.settings.dispo||0;
@@ -585,7 +603,7 @@ function planExpected(paidOf,salNow){
   let cash=+st.free||0, pot=(st.est==null||st.est==='')?0:+st.est;
   for(let i=mIdx(st.month);i<=mIdx(m);i++){const mm=mStr(i);
     let inc=0,bizNet=0,out=0,taxPaid=0;
-    const take=(key,o)=>{ if(o.plan||(mm===st.month&&st.done.includes(key))||!paidOf(key,o,mm)) return;
+    const take=(key,o)=>{ if(o.plan||(mm===st.month&&(st.done.includes(key)||(!key.startsWith('x:')&&autoIn(o,mm))))||!paidOf(key,o,mm)) return;
       const a=+o.amount||0;
       if(o.kind==='in') inc+=a; else if(o.cat==='tax') taxPaid+=a; else { out+=a; if(o.cat==='biz') bizNet+=netOf(a,o.vat); } };
     for(const f of S.fixed) if(isOn(f,mm)) take(keyF(f,mm),f);
@@ -600,15 +618,16 @@ function planExpected(paidOf,salNow){
 }
 /* ============ Ansicht ============ */
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
-let TAB=(()=>{try{return sessionStorage.getItem('gf5.tab')||'monate'}catch(e){return 'monate'}})(), CUR=null;
-const setTab=t=>{TAB=t;try{sessionStorage.setItem('gf5.tab',TAB)}catch(e){}};
+let TAB=(()=>{try{return sessionStorage.getItem('gf6.tab')||'ueberblick'}catch(e){return 'ueberblick'}})(), CUR=null;
+const setTab=t=>{TAB=t;try{sessionStorage.setItem('gf6.tab',TAB)}catch(e){}};
 $$('[data-tab]').forEach(b=>b.onclick=()=>{setTab(b.dataset.tab);render();window.scrollTo({top:0});});
 window.addEventListener('resize',()=>{if(TAB==='ueberblick'||TAB==='planen'){clearTimeout(window._rz);window._rz=setTimeout(render,150);}});
 const statusTxt={ok:'Im grünen Bereich',eng:'Nächster Monat nicht gedeckt',minus:'Im Minus'};
+const polTxt=()=>+S.settings.minimum?'Fixkosten + Minimum':'Fixkosten';
 const stTxt=r=>r.status!=='minus'?statusTxt[r.status]:(+S.settings.dispo&&!r.overDispo?'Im Dispo':(+S.settings.dispo?'Über dem Dispo-Limit':'Im Minus'));
 const ico=n=>`<svg class="i"><use href="#i-${n}"/></svg>`;
 const sg=v=>(v>0?'+':v<0?'−':'')+eur(Math.abs(v));
-const deltaHTML=(a,b)=>{const d=b.sal-a.sal; return `<div class="delta">Gehalt möglich: <b>${eur(a.sal)} → ${eur(b.sal)}</b> <span class="${d<0?'neg':d>0?'pos':''}">(${sg(d)})</span><br>Geld reicht bis: <b>${runTxt(a.run)} → ${runTxt(b.run)}</b></div>`;};
+const deltaHTML=(a,b)=>{const d=b.sal-a.sal; return `<div class="delta">Sicher drin: <b>${eur(a.sal)} → ${eur(b.sal)}</b> <span class="${d<0?'neg':d>0?'pos':''}">(${sg(d)})</span><br>Geld reicht bis: <b>${runTxt(a.run)} → ${runTxt(b.run)}</b></div>`;};
 
 function render(){
   $$('[data-tab]').forEach(b=>{b.classList.toggle('on',b.dataset.tab===TAB);b.setAttribute('aria-current',b.dataset.tab===TAB?'page':'false');});
@@ -663,11 +682,11 @@ function rMonate(main){
   const meTotal=sum(fpriv)+sum(exPriv.filter(x=>!x.plan))+r.sal;
   const need=fixMonth().need, got=sum(jobs.filter(x=>!x.plan));
   // Ist der nächste Monat schon vorfinanziert? (Polster = Fixkosten des nächsten Monats, außer selbst eingestellt)
-  const pol=polster(), nextM=mName(mStr(mIdx(CUR)+1)), what=S.settings.polster==null?`Fixkosten ${nextM}`:'Polster';
-  const cov=r.end>=pol?`✓ ${what} gedeckt (${eur(pol)}) · frei ${eur(r.end-pol)}`:`${what}: es fehlen ${eur(pol-Math.max(r.end,0))}`;
+  const pol=polster(), nextM=mName(mStr(mIdx(CUR)+1));
+  const cov=r.end>=pol?`✓ ${nextM} gedeckt (${eur(pol)}) · frei ${eur(r.end-pol)}`:`${nextM} nicht gedeckt: es fehlen ${eur(pol-Math.max(r.end,0))}`;
   // Was du dir diesen Monat auszahlen kannst: das eingestellte Gehalt, außer das Konto fiele Ende des Monats unter dein Polster
   const canPay=Math.max(0,Math.min(r.sal,Math.floor((r.sal+r.end-polster())/10)*10));
-  const fxRow=f=>{const key=keyF(f,CUR);return `<div class="item" data-fx="${f.id}" style="cursor:pointer">${paidBtn('pf',key,!!S.paidFixed[key],f.kind)}<span class="t"><b>${esc(f.name)}</b></span><span class="num" style="font-weight:600">${eurX(+f.amount)}</span></div>`;};
+  const fxRow=f=>{const key=keyF(f,CUR);return `<div class="item" data-fx="${f.id}" style="cursor:pointer">${paidBtn('pf',key,isPaidF(f,CUR),f.kind)}<span class="t"><b>${esc(f.name)}</b></span><span class="num" style="font-weight:600">${eurX(+f.amount)}</span></div>`;};
   const exRow=x=>x.plan
     ?`<div class="item planned" data-ex="${x.id}" style="cursor:pointer"><span class="bar plan"></span><span class="t"><b>${esc(x.name)}<span class="tag">geplant</span></b><small>zählt erst mit, wenn du es fest machst</small></span><span class="badge neutral">${x.kind==='in'?'+':'−'}${eurX(+x.amount)}</span></div>`
     :`<div class="item" data-ex="${x.id}" style="cursor:pointer">${paidBtn('xp',keyX(x),!!x.paid,x.kind)}<span class="t"><b>${esc(x.name)}</b>${x.kind==='out'&&x.cat!=='priv'?`<small>${catName[x.cat]||''}</small>`:''}</span><span class="badge ${x.kind==='in'?'in':'out'}">${x.kind==='in'?'+':'−'}${eurX(+x.amount)}</span></div>`;
@@ -680,11 +699,11 @@ function rMonate(main){
       <span class="badge ${r.status}">${r.status==='ok'?'<span class="ok-ico">✓</span>':''}${stTxt(r)}</span>
       <span class="mpos">Monat ${k+1} von ${rows.length}</span></div>
     <div class="stats">
-      <div class="stat hi ${r.status}"><span class="lbl">Konto Ende ${mName(CUR)}</span><span class="val">${eur(r.end)}</span><span class="tiny cover">${cov}</span></div>
+      <button class="stat hi ${r.status}" data-why="end" style="text-align:left"><span class="lbl">Konto Ende ${mName(CUR)} <span class="why">?</span></span><span class="val">${eur(r.end)}</span><span class="tiny cover">${cov}</span></button>
       <div class="stat s-pm"><span class="icirc sand">${ico('coin')}</span><div><div class="lbl">Plus/Minus im Monat</div><div class="val ${r.result<0?'neg':''}">${sg(r.result)}</div><div class="tiny">alles rein, alles raus</div></div></div>
       <div class="stat s-in"><span class="icirc sage">${ico('in')}</span><div><div class="lbl">Einnahmen</div><div class="val">${eur(r.rein)}</div>${isStart?'<div class="tiny">was noch kommt</div>':''}</div></div>
       <div class="stat s-out"><span class="icirc gray">${ico('out')}</span><div><div class="lbl">Ausgaben</div><div class="val">${eur(r.raus)}</div>${isStart?'<div class="tiny">was noch rausgeht</div>':''}</div></div>
-      <button class="stat s-sal" id="salTile" style="text-align:left"><span class="icirc sand">${ico('leaf')}</span><div><div class="lbl">Dein Gehalt</div><div class="val ${canPay<r.sal?'warn':''}">${eur(canPay)}</div><div class="tiny">${canPay<r.sal?`eingestellt ${eur(r.sal)}, mehr gibt das Konto nicht her`:'passt diesen Monat'}</div></div></button>
+      <button class="stat s-sal" id="salTile" style="text-align:left"><span class="icirc sand">${ico('leaf')}</span><div><div class="lbl">Gehalt im ${mName(CUR)}</div><div class="val ${canPay<r.sal?'warn':''}">${eur(canPay)}</div><div class="tiny">${canPay<r.sal?`statt ${eur(r.sal)}, mehr ist nicht drin`:'✓ ist drin'}</div></div></button>
     </div>
     <div class="cols">
       <section class="card">
@@ -712,12 +731,16 @@ function rMonate(main){
     </div>`;
   $('#prev').onclick=()=>{CUR=ms[k-1];render();}; $('#next').onclick=()=>{CUR=ms[k+1];render();};
   $('#mSel').onchange=e=>{CUR=e.target.value;render();};
-  const toggle=key=>{const on=key.startsWith('x:')?!S.extras.find(x=>keyX(x)===key).paid:!S.paidFixed[key]; setPaid(key,on,CUR); save(); render();};
+  const toggle=key=>{const isX=key.startsWith('x:'), o=isX?S.extras.find(x=>keyX(x)===key):null, fo=isX?null:S.fixed.find(f=>keyF(f,CUR)===key), on=isX?!o.paid:!isPaidF(fo,CUR);
+    if(!on&&fo&&autoIn(fo,CUR)){S.start.notYet=(S.start.notYet||[]).concat([key]); setPaid(key,false,CUR); save(); render(); return;}
+    if(on&&CUR===S.start.month&&!S.start.done.includes(key)) return askWhen(key,isX?o:S.fixed.find(f=>keyF(f,CUR)===key));
+    setPaid(key,on,CUR); save(); render();};
   $$('[data-fx]').forEach(b=>b.onclick=e=>{const t=e.target.closest('[data-pf]'); if(t){toggle(t.dataset.pf);return;} openFixed(b.dataset.fx);});
   $$('[data-ex]').forEach(b=>b.onclick=e=>{const t=e.target.closest('[data-xp]'); if(t){toggle(t.dataset.xp);return;} openExtra(b.dataset.ex);});
   $$('details[data-grp]').forEach(d=>d.addEventListener('toggle',()=>{S._open=S._open||{};S._open[d.dataset.grp]=d.open;}));
   $$('[data-new]').forEach(b=>b.onclick=()=>openExtra(null,b.dataset.new));
   $('#salBtn').onclick=()=>openSalary(CUR); $('#salTile').onclick=()=>openSalary(CUR);
+  $$('[data-why]').forEach(b=>b.onclick=()=>explain(b.dataset.why,r));
 }
 
 /* ---------- Planen ---------- */
@@ -745,7 +768,7 @@ function roomOnce(){
 }
 function itemEffect(o,t,base){
   const rate=rateOf(), m=planMetrics(x=>x===o), ds=m.sal-base.sal, parts=[];
-  parts.push(`Gehalt möglich <b class="${ds<0?'neg':''}">${sg(ds)}</b>`);
+  parts.push(`Sicher drin <b class="${ds<0?'neg':''}">${sg(ds)}</b>`);
   const dk=(base.run.m==null&&m.run.m==null)?0:m.run.k-base.run.k;
   if(dk) parts.push(dk<0?`reicht ${-dk} ${dk===-1?'Monat':'Monate'} kürzer`:`reicht ${dk} ${dk===1?'Monat':'Monate'} länger`);
   if(t==='f'){ if(Math.abs(m.need-base.need)>=1) parts.push(`Monatsziel ${eur(base.need)} → <b>${eur(m.need)}</b>`); }
@@ -769,7 +792,7 @@ function rPlanen(main){
       <section class="card">
         <div class="chead"><h3>Was du durchspielst</h3><span class="sub">${P.length?`${active.length} von ${P.length} eingerechnet`:''}</span></div>
         ${active.length?`<div class="cmp">
-          <div><span>Gehalt möglich</span><b>${eur(base.sal)} → <span class="${ds<0?'neg':''}">${eur(plan.sal)}</span> (${sg(ds)})</b></div>
+          <div><span>Sicher drin</span><b>${eur(base.sal)} → <span class="${ds<0?'neg':''}">${eur(plan.sal)}</span> (${sg(ds)})</b></div>
           <div><span>Geld reicht bis</span><b>${runTxt(base.run)} → ${runTxt(plan.run)}</b></div>
           <div><span>Monatsziel Extra-Jobs</span><b>${eur(base.need)} → ${eur(plan.need)}</b></div></div>`:''}
         <div class="rows">${P.map(({o,t})=>{const on=o.on!==false; return `<div class="pitem${on?'':' off'}" data-pedit="${t}:${o.id}">
@@ -816,7 +839,7 @@ function rFix(main){
   const r=fixMonth(), m=r.m;
   const list=S.fixed.filter(f=>!f.end||mIdx(f.end)>=mIdx(S.start.month));
   const fin=list.filter(f=>f.kind==='in'), fb=list.filter(f=>f.kind==='out'&&f.cat!=='priv'), fp=list.filter(f=>f.kind==='out'&&f.cat==='priv');
-  const row=(f,kind)=>{const meta=[f.interval!=1?oftenTxt[f.interval]:'',f.kind==='in'&&S.settings.vatOn&&f.vat?'netto':'',mIdx(f.start)>mIdx(S.start.month)?'ab '+mLong(f.start):'',f.end?'bis '+mLong(f.end):''].filter(Boolean).join(', ');
+  const row=(f,kind)=>{const meta=[f.kind==='out'?(f.day?`am ${f.day}.`:'<span class="neg">Abbuchungstag fehlt</span>'):'',f.interval!=1?oftenTxt[f.interval]:'',f.kind==='in'&&S.settings.vatOn&&f.vat?'netto':'',mIdx(f.start)>mIdx(S.start.month)?'ab '+mLong(f.start):'',f.end?'bis '+mLong(f.end):''].filter(Boolean).join(', ');
     return `<button class="item${f.plan?' planned':''}" data-fx="${f.id}"><span class="bar ${f.plan?'plan':kind==='in'?'in':kind==='priv'?'sal':'out'}"></span><span class="t"><b>${esc(f.name)}${f.plan?'<span class="tag">geplant</span>':''}</b>${meta?`<small>${meta}</small>`:''}</span><span class="badge ${kind==='in'&&!f.plan?'in':'neutral'}">${kind==='in'?'+':''}${eurX(+f.amount)}</span></button>`;};
   const pm=l=>l.filter(f=>!f.plan).reduce((a,f)=>a+f.amount/(+f.interval||1),0);
   const parts=[['Business-Kosten',r.biz,'var(--char)'],['Steuerrücklage',r.tax,'var(--gray)'],['Privat-Kosten',r.priv,'var(--sand)'],['Gehalt',r.salary,'var(--sage-hi)']];
@@ -861,20 +884,21 @@ function rUeber(main){
   const firstMinus=rows.find(r=>r.status==='minus'), firstEng=rows.find(r=>r.status!=='ok');
   main.innerHTML=`${bannerHTML()}
     <div class="ostat">
-      <div class="stat hi ${ms<S.settings.salary?'eng':'ok'}"><span class="lbl">Gehalt möglich, jeden Monat</span><span class="val">${eur(ms)}</span><span class="tiny">hält dein Polster ${safe} Monate lang · eingestellt ${eur(S.settings.salary)}</span></div>
-      <div class="stat"><span class="icirc sage">${ico('cal')}</span><div><div class="lbl">Dein Geld reicht bis</div><div class="val ${run.k<safe?'warn':''}">${runTxt(run)}</div><div class="tiny">${run.m?'mit deinen Jobs, ohne neue':'mit allem, was eingetragen ist'}</div></div></div>
-      <div class="stat"><span class="icirc sand">${ico('fix')}</span><div><div class="lbl">Monatsziel Extra-Jobs</div><div class="val">${fm.rest<0?eur(fm.need):'erreicht'}</div><div class="tiny">${fm.rest<0?'netto pro Monat, ab hier wächst dein Konto':`deine festen Einnahmen decken alles, +${eur(fm.rest)} übrig`}</div></div></div>
+      <button class="stat hi ${ms<S.settings.salary?'eng':'ok'}" data-why="sal" style="text-align:left"><span class="lbl">Sicher drin, jeden Monat <span class="why">?</span></span><span class="val">${eur(ms)}</span><span class="tiny">${ms>=S.settings.salary?`Du nimmst dir ${eur(S.settings.salary)} ✓`:`Du nimmst dir ${eur(S.settings.salary)}, ${eur(S.settings.salary-ms)} zu viel`}</span></button>
+      <button class="stat" data-why="run" style="text-align:left"><span class="icirc sage">${ico('cal')}</span><div><div class="lbl">Dein Geld reicht bis <span class="why">?</span></div><div class="val ${run.k<safe?'warn':''}">${runTxt(run)}</div><div class="tiny">${run.m?'mit deinen Jobs, ohne neue':'mit allem, was eingetragen ist'}</div></div></button>
+      <button class="stat" data-why="goal" style="text-align:left"><span class="icirc sand">${ico('fix')}</span><div><div class="lbl">Monatsziel Extra-Jobs <span class="why">?</span></div><div class="val">${fm.rest<0?eur(fm.need):'erreicht'}</div><div class="tiny">${fm.rest<0?'netto pro Monat, ab hier wächst dein Konto':`deine festen Einnahmen decken alles, +${eur(fm.rest)} übrig`}</div></div></button>
     </div>
     ${stripHTML(rows,CUR)}
     <div class="cgrid2">
       <section class="card chart"><div class="chead"><h3>Dein Konto am Monatsende</h3><span class="badge ${firstMinus?'minus':firstEng?'eng':'ok'}">${firstMinus?'Minus in Sicht':firstEng?'Wird eng':'Auf Kurs'}</span></div>
-        <div class="keys"><span><i style="background:var(--sage)"></i>Gut</span><span><i style="background:var(--amber)"></i>Fixkosten nicht gedeckt</span><span><i style="background:var(--red)"></i>Minus</span><span><i class="dash"></i>${S.settings.polster==null?'Fixkosten nächster Monat':'Polster'} ${eur(pol)}</span></div>
+        <div class="keys"><span><i style="background:var(--sage)"></i>Gut</span><span><i style="background:var(--amber)"></i>Nächster Monat nicht gedeckt</span><span><i style="background:var(--red)"></i>Minus</span><span><i class="dash"></i>Polster: ${polTxt()} ${eur(pol)}</span></div>
         <div id="c1"></div><div class="tip" id="t1"></div></section>
       <section class="card chart"><div class="chead"><h3>Einnahmen und Ausgaben</h3><span class="sub">pro Monat</span></div>
         <div class="keys"><span><i style="background:var(--sage)"></i>Einnahmen</span><span><i style="background:var(--char)"></i>Ausgaben</span></div>
         <div id="c2"></div><div class="tip" id="t2"></div></section>
     </div>`;
   $$('.mchip,.pchip').forEach(b=>b.onclick=()=>goMonth(b.dataset.m));
+  $$('[data-why]').forEach(b=>b.onclick=()=>explain(b.dataset.why));
   lineChart($('#c1'),$('#t1'),rows,pol);
   barChart($('#c2'),$('#t2'),rows,[r=>r.rein,r=>r.raus],['var(--sage)','var(--char)'],r=>`${mLong(r.m)}<br>Einnahmen <b>${eur(r.rein)}</b><br>Ausgaben <b>${eur(r.raus)}</b>`);
 }
@@ -956,6 +980,56 @@ function compareChart(el,tip,a,b,pol){
   hover(el,tip,n,L,cw,W,i=>`${mLong(a[i].m)}<br>ohne Plan <b>${eur(a[i].end)}</b>${b?`<br>mit Plan <b>${eur(b[i].end)}</b>`:''}`,i=>goMonth(a[i].m));
 }
 
+/* ============ Warum? Jede Hauptzahl erklärt sich selbst ============ */
+function explain(kind,row){
+  const L=(a,b,cls='')=>`<div class="ln ${cls}"><span>${a}</span><b>${b}</b></div>`;
+  const pol=polster(), mn=+S.settings.minimum||0, fo=fixOut();
+  const polLines=L('Fixkosten eines Monats',eur(fo))+(mn?L('Minimum zum Leben',eur(mn)):'')+L('Polster',eur(pol),'mid');
+  let t='',h='';
+  if(kind==='sal'){
+    const ms=maxSalary(), R=simulate(ms,true,6), low=R.reduce((a,r)=>r.end<a.end?r:a,R[0]);
+    t='Sicher drin';
+    h=`<p class="lead">Das höchste Gehalt, das du dir jeden Monat zahlen kannst, ohne dass in den nächsten 6 Monaten ein Monatsende unter dein Polster fällt. Gerechnet mit deinen eingetragenen Jobs, ohne neue.</p>
+      <div class="bill">${polLines}${L('Sicher drin pro Monat',eur(ms),'end')}</div>
+      <p class="hint">Engster Monat dabei: <b>${mLong(low.m)}</b>, Konto am Ende ${eur(low.end)}. Ein Euro mehr Gehalt, und dort wäre der nächste Monat nicht mehr gedeckt.</p>
+      <p class="hint">Du nimmst dir ${eur(S.settings.salary)}. ${ms>=S.settings.salary?'Das passt.':`Das sind ${eur(S.settings.salary-ms)} mehr, als sicher drin ist. Entweder etwas weniger nehmen oder mehr Jobs reinholen.`}</p>`;
+  } else if(kind==='run'){
+    const R=simulate(null,false,24), k=R.findIndex(r=>r.end<0), show=R.slice(0,k<0?12:Math.min(k+1,24));
+    t='Dein Geld reicht bis';
+    h=`<p class="lead">So entwickelt sich dein Konto, wenn nur das reinkommt, was schon eingetragen ist, und du dir weiter ${eur(S.settings.salary)} nimmst.</p>
+      <div class="bill">${show.map(r=>L(mLong(r.m),eur(r.end),r.end<0?'neg':'')).join('')}</div>
+      <p class="hint">${k<0?'In den nächsten zwei Jahren rutschst du nicht ins Minus.':`Im ${mLong(R[k].m)} wärst du im Minus. Bis dahin brauchst du neue Jobs.`}</p>`;
+  } else if(kind==='goal'){
+    const r=fixMonth();
+    t='Monatsziel Extra-Jobs';
+    h=`<p class="lead">Ein Monat nur mit deinen festen Posten, ohne einen einzigen Extra-Job (${mLong(r.m)}).</p>
+      <div class="bill">${L('Feste Einnahmen','+'+eur(r.inc))}${L('Business-Fixkosten','−'+eur(r.biz))}${L(`Steuerrücklage (${S.settings.taxRate} %)`,'−'+eur(r.tax))}${L('Privat-Fixkosten','−'+eur(r.priv))}${L('Gehalt','−'+eur(r.salary))}${L(r.rest<0?'Fehlt ohne Jobs':'Bleibt übrig',sg(r.rest),'end')}</div>
+      ${r.rest<0?`<p class="hint">Damit nach ${S.settings.taxRate} % Steuer ${eur(-r.rest)} übrig bleiben, brauchst du <b>${eur(r.need)}</b> Extra-Umsatz netto im Monat. Darüber wächst dein Konto, darunter zehrst du von deinen Reserven.</p>`:''}`;
+  } else if(kind==='end'&&row){
+    const c=row.c, isStart=row.m===S.start.month;
+    t='Konto Ende '+mName(row.m);
+    h=`<div class="bill">${L(isStart?`Kontostand am ${fmtDate(S.start.asOf)}`:'Ende Vormonat',eur(row.before))}
+      ${L(isStart?'Einnahmen, die noch kommen':'Einnahmen','+'+eur(row.rein))}
+      ${c.bizOut?L('Business-Kosten','−'+eur(c.bizOut)):''}${c.priv?L('Privat-Kosten','−'+eur(c.priv)):''}
+      ${L('Steuerrücklage','−'+eur(c.taxRes))}${row.taxOver>0.5?L('Steuer, die der Topf nicht deckt','−'+eur(row.taxOver)):''}
+      ${L(isStart&&S.start.salPaid?'Restgehalt':'Gehalt','−'+eur(row.salOut))}
+      ${L('Konto Ende '+mName(row.m),eur(row.end),'end')}</div>
+      <div class="bill" style="margin-top:12px">${polLines}${L(row.end>=pol?'Frei darüber':'Fehlt zum Polster',eur(Math.abs(row.end-pol)),row.end>=pol?'pos':'neg')}</div>
+      ${isStart?'<p class="hint">Bereits Bezahltes steckt im Kontostand und taucht hier nicht noch einmal auf.</p>':''}`;
+  }
+  openSheet(t,`<div class="explain">${h}</div>`,()=>{},'Verstanden');
+}
+// Haken nach dem Kontostand: war das vorher oder nachher?
+function askWhen(key,o){
+  const d=fmtDate(S.start.asOf)||mName(S.start.month), isIn=o&&o.kind==='in';
+  openSheet(isIn?'Wann kam das Geld?':'Wann wurde bezahlt?',`
+    <p class="lead" style="margin:0 2px 14px"><b>${esc(o?o.name:'')}</b>: ${isIn?'Ist das Geld schon vor deinem letzten Kontostand':'Ging das schon vor deinem letzten Kontostand'} (${d}) ${isIn?'eingegangen':'raus'}?</p>
+    <p class="hint">Vorher heißt: steckt schon in deinem Kontostand und zählt nicht noch einmal. Nachher heißt: Geldfluss rechnet es jetzt noch ${isIn?'dazu':'ab'}.</p>
+    <button type="button" class="ghost" id="wBefore" style="width:100%;padding:14px;margin-bottom:8px">Vor dem ${d}</button>`,
+    ()=>{setPaid(key,true,S.start.month); save(); render();},`Nach dem ${d}`);
+  sh.querySelector('#wBefore').onclick=()=>{setPaid(key,true,S.start.month); if(!S.start.done.includes(key)) S.start.done.push(key); if(!S.start.orig.includes(key)) S.start.orig.push(key); save(); closeSheet(); render();};
+}
+
 /* ============ Sheets ============ */
 const bd=$('#bd'), SHEET=$('#sheet'); let sh=SHEET;
 function openSheet(title,html,onSave,saveLabel='Speichern'){
@@ -984,7 +1058,7 @@ function openExtra(id,kind,plan=false){
   if(!x) return; const isIn=x.kind==='in', base=metrics();
   const title=id?(x.plan?'Durchspielen':isIn?'Job bearbeiten':'Ausgabe bearbeiten'):(plan?'Einmalige Ausgabe durchspielen':isIn?'Neuer Job':'Neue Ausgabe');
   openSheet(title,`
-    ${isIn?'':`<div class="f"><label>Was für eine Ausgabe?</label>${chips('xCat',[['biz','Business'],['priv','Privat'],['invest','Anschaffung'],['tax','Steuer']],x.cat)}</div>`}
+    ${isIn?'':`<div class="f"><label>Was für eine Ausgabe?</label>${chips('xCat',[['biz','Business'],['priv','Privat'],['tax','Steuerzahlung']],x.cat==='invest'?'biz':x.cat)}</div>`}
     <div class="f"><label for="xName">${isIn?'Kunde oder Projekt':'Wofür?'}</label><input type="text" id="xName" value="${esc(x.name)}" placeholder="${isIn?'z. B. Imagefilm für Bäckerei Krume':'z. B. Kameramiete'}"></div>
     <div class="f"><label for="xAmt" id="xAmtL"></label><div class="money"><input type="text" id="xAmt" inputmode="decimal" value="${fmtIn(x.amount)}" placeholder="0"></div></div>
     ${vatOn?sw('xVat',isIn?'Plus 19 % MwSt auf der Rechnung':'Enthält 19 % MwSt',x.vat):''}
@@ -1031,6 +1105,7 @@ function openFixed(id,type,plan=false){
     <div class="f"><label for="fName">Name</label><input type="text" id="fName" value="${esc(f.name)}" placeholder="z. B. Retainer, Büromiete, Auto-Leasing"></div>
     <div class="f"><label for="fAmt" id="fAmtL">Betrag</label><div class="money"><input type="text" id="fAmt" inputmode="decimal" value="${fmtIn(f.amount)}" placeholder="0"></div></div>
     ${vatOn?sw('fVat','',f.vat):''}
+    <div class="f" id="fDayRow"><label for="fDay">Wird abgebucht am</label><select id="fDay"><option value="">Weiß ich nicht</option>${Array.from({length:31},(_,i)=>`<option value="${i+1}" ${+f.day===i+1?'selected':''}>${i+1}. des Monats</option>`).join('')}</select></div>
     <div class="f"><label for="fInt">Wie oft?</label><select id="fInt">${[[1,'Jeden Monat'],[3,'Alle 3 Monate'],[6,'Alle 6 Monate'],[12,'Einmal im Jahr']].map(([k,t])=>`<option value="${k}" ${+f.interval===k?'selected':''}>${t}</option>`).join('')}</select></div>
     <div class="two"><div class="f"><label for="fStart">Ab</label><select id="fStart">${monthOpts(f.start,mStr(mIdx(S.start.month)-3),40)}</select></div>
     <div class="f"><label for="fEnd">Bis</label><select id="fEnd"><option value="">Kein Ende</option>${monthOpts(f.end,S.start.month,60)}</select></div></div>
@@ -1043,12 +1118,12 @@ function openFixed(id,type,plan=false){
   function build(strict){
     const name=v('fName').trim(), amt=n('fAmt'); if(strict&&(!name||!amt)){sh.querySelector(name?'#fAmt':'#fName').focus();return null;}
     const t=chipVal('fT');
-    const o={id:id||uid(),name:name||'Neu',amount:amt,kind:t==='in'?'in':'out',cat:t==='priv'?'priv':'biz',vat:vatOn&&t!=='priv'?ck('fVat'):false,interval:+v('fInt'),start:v('fStart'),end:v('fEnd'),plan:ck('fPlan')};
+    const o={id:id||uid(),name:name||'Neu',amount:amt,kind:t==='in'?'in':'out',cat:t==='priv'?'priv':'biz',vat:vatOn&&t!=='priv'?ck('fVat'):false,interval:+v('fInt'),start:v('fStart'),end:v('fEnd'),plan:ck('fPlan'),day:t==='in'?null:(+v('fDay')||null)};
     if(o.end&&mIdx(o.end)<mIdx(o.start)) o.end=o.start; return o;
   }
   const upd=()=>{
     const t=chipVal('fT'), a=n('fAmt'), canVat=vatOn&&t!=='priv', vat=canVat&&ck('fVat');
-    showEl('fVatRow',canVat);
+    showEl('fVatRow',canVat); showEl('fDayRow',t!=='in');
     const lab=sh.querySelector('#fVatLbl'); if(lab) lab.textContent=t==='in'?'Plus 19 % MwSt auf der Rechnung':'Enthält 19 % MwSt';
     sh.querySelector('#fAmtL').textContent=t==='in'?(vatOn?'Betrag ohne MwSt':'Betrag'):'Betrag, der abgebucht wird';
     let h='';
@@ -1059,7 +1134,7 @@ function openFixed(id,type,plan=false){
     if(a){const o=build(false); o.plan=false; const after=tryWith(()=>{if(id) S.fixed=S.fixed.map(y=>y.id===id?o:y); else S.fixed.push(o);}); h+=deltaHTML(base,after);}
     sh.querySelector('#fCalc').innerHTML=h;
   };
-  bindChips(upd); ['fAmt','fVat','fInt','fStart','fEnd','fPlan'].forEach(i=>{const e=sh.querySelector('#'+i);if(e){e.addEventListener('input',upd);e.addEventListener('change',upd);}}); upd();
+  bindChips(upd); ['fAmt','fVat','fInt','fStart','fEnd','fPlan','fDay'].forEach(i=>{const e=sh.querySelector('#'+i);if(e){e.addEventListener('input',upd);e.addEventListener('change',upd);}}); upd();
   const d=sh.querySelector('#del'); if(d) d.onclick=()=>{S.fixed=S.fixed.filter(y=>y.id!==id);save();closeSheet();render();};
 }
 
@@ -1097,9 +1172,11 @@ function rKonto(main){
       for(const x of S.extras){if(x.plan||x.paid||x.month!==mm)continue; if(mm===st.month&&st.done.includes(keyX(x)))continue; roll.push({t:'x',o:x,mm,key:keyX(x)});}
     }
   }
-  const cur=[...fixedIn(m).map(f=>({t:'f',o:f,key:keyF(f,m),on:!!S.paidFixed[keyF(f,m)]})),...extrasIn(m).map(x=>({t:'x',o:x,key:keyX(x),on:!!x.paid}))]
+  const dToday=+today().slice(8,10), autoDue=f=>f.kind==='out'&&f.day&&+f.day<=dToday;
+  const cur=[...fixedIn(m).map(f=>({t:'f',o:f,key:keyF(f,m),on:!!S.paidFixed[keyF(f,m)]||autoDue(f),auto:autoDue(f)})),...extrasIn(m).map(x=>({t:'x',o:x,key:keyX(x),on:!!x.paid}))]
     .sort((a,b)=>(a.o.kind==='in'?0:1)-(b.o.kind==='in'?0:1));
-  const sgn=o=>o.kind==='in'?'+':'−', kindTxt=o=>o.kind==='in'?'Einnahme':o.cat==='priv'?'Privat':o.cat==='tax'?'Steuer':o.cat==='invest'?'Anschaffung':'Business';
+  const sgn=o=>o.kind==='in'?'+':'−', kindTxt=r=>{const o=r.o; const k=o.kind==='in'?'Einnahme':o.cat==='priv'?'Privat':o.cat==='tax'?'Steuer':'Business'; return r.t==='f'&&o.kind==='out'?(o.day?`${k} · am ${o.day}.`:`${k} · Tag unbekannt`):k;};
+  const noDay=S.fixed.filter(f=>!f.plan&&f.kind==='out'&&!f.day&&isActive(f,m)).length;
   const sal=salaryOf(m), salPaid0=same?st.salPaid:0;
   const rollFrom=roll.length?[...new Set(roll.map(r=>mName(r.mm)))].join(', '):'';
   const formPaid=()=>{const ov={};
@@ -1115,21 +1192,13 @@ function rKonto(main){
           <div class="chead"><h3>Was steht auf dem Konto?</h3></div>
           <div class="two">
             <div class="f"><label for="bMain">Geschäftskonto</label><div class="money"><input type="text" id="bMain" inputmode="decimal" value="${same?fmtIn(st.main??st.free):''}" placeholder="0"></div></div>
-            <div class="f"><label for="bDispo">Dispo-Limit</label><div class="money"><input type="text" id="bDispo" inputmode="decimal" value="${dispo0?fmtIn(dispo0):''}" placeholder="0"></div></div>
+            <div class="f"><label for="bEst">Steuertopf</label><div class="money"><input type="text" id="bEst" inputmode="decimal" value="${same?fmtIn(st.est):''}" placeholder="${!same&&st.est!=null?'zuletzt '+fmtIn(st.est):'0'}"></div></div>
           </div>
-          <p class="hint">Genau wie in der Banking-App, auch im Minus. Ohne Steuer-Unterkonten und ohne Privatkonto.</p>
+          <p class="hint">Geschäftskonto genau wie in der Banking-App, ohne Unterkonten. Steuertopf: was auf deinem Einkommensteuer-Konto liegt. Daraus zahlst du später die Steuer.</p>
           <div class="calc" id="bCalc"></div>
           ${st.month?`<div class="recon" id="bRecon"></div>`:''}
         </section>
-        <section class="card">
-          <div class="chead"><h3>Steuer-Unterkonten</h3><span class="sub">optional</span></div>
-          <p class="hint" style="margin:0 2px 12px">Fließt nicht in deinen Kontostand ein. Das Einkommensteuer-Konto ist dein Steuertopf: Steuerzahlungen gehen zuerst von dort.</p>
-          <div class="two">
-            <div class="f"><label for="bUst">Umsatzsteuer</label><div class="money"><input type="text" id="bUst" inputmode="decimal" value="${same?fmtIn(st.ust):''}" placeholder="0"></div></div>
-            <div class="f"><label for="bEst">Einkommensteuer</label><div class="money"><input type="text" id="bEst" inputmode="decimal" value="${same?fmtIn(st.est):''}" placeholder="${!same&&st.est!=null?'zuletzt '+fmtIn(st.est):'0'}"></div></div>
-          </div>
-          <div class="calc" id="bTax" style="background:var(--sand-soft);margin-bottom:0"></div>
-        </section>
+        <div class="calc" id="bTax" style="background:var(--sand-soft)"></div>
         ${(S.recon||[]).length?`<section class="card"><div class="chead"><h3>Bisherige Abgleiche</h3><span class="sub">ohne Eintrag</span></div>
           <div class="rows">${S.recon.slice(-6).reverse().map(r=>`<div class="item"><span class="t"><b>${r.since?fmtDate(r.since)+' – ':''}${fmtDate(r.date)}</b><small>erwartet ${eur(r.expected)} · auf dem Konto ${eur(r.actual)}</small></span><span class="badge ${r.diff<0?'out':'in'}">${sg(r.diff)}</span></div>`).join('')}</div></section>`:''}
       </div>
@@ -1137,7 +1206,8 @@ function rKonto(main){
         ${roll.length?`<section class="card"><div class="chead"><h3>Noch offen aus ${rollFrom}</h3></div><p class="hint" style="margin:0 2px 12px">Kommt das noch? Dann wandert es in den ${mName(m)}. Feste Kosten sind meist längst abgebucht und stehen schon auf „erledigt".</p>${roll.map((r,i)=>`<div class="roll"><div class="top"><span><b>${esc(r.o.name)}</b> <small>${MN[mIdx(r.mm)%12]}</small></span><b class="num ${r.o.kind==='in'?'pos':''}">${sgn(r.o)}${eurX(+r.o.amount)}</b></div>${chips('rl'+i,[['come','Kommt noch'],['done','Ist erledigt']],r.t==='f'&&r.o.kind==='out'?'done':'come')}</div>`).join('')}</section>`:''}
         <section class="card">
           <div class="chead"><h3>Schon gebucht im ${mName(m)}?</h3></div>
-          ${cur.map((r,i)=>`<label class="chk"><input type="checkbox" data-cur="${i}" ${r.on?'checked':''}><span>${esc(r.o.name)}<small>${kindTxt(r.o)}</small></span><b class="${r.o.kind==='in'?'pos':''}">${sgn(r.o)}${eurX(+r.o.amount)}</b></label>`).join('')||'<p class="hint">Für diesen Monat ist noch nichts eingetragen.</p>'}
+          <p class="hint" style="margin:0 2px 12px">Fixkosten mit Abbuchungstag hakt Geldfluss selbst ab. Du musst nur abhaken, welche Kunden schon bezahlt haben.${noDay?` <b>Bei ${noDay} Fixkosten fehlt noch der Tag</b>, trag ihn unter „Fix" ein.`:''}</p>
+          ${cur.map((r,i)=>`<label class="chk"><input type="checkbox" data-cur="${i}" ${r.on?'checked':''}><span>${esc(r.o.name)}<small>${kindTxt(r)}</small></span><b class="${r.o.kind==='in'?'pos':''}">${sgn(r.o)}${eurX(+r.o.amount)}</b></label>`).join('')||'<p class="hint">Für diesen Monat ist noch nichts eingetragen.</p>'}
           <p class="hint" style="margin-top:8px">Was du schon aufs Privatkonto überwiesen hast, etwa für Miete oder Krankenkasse, zählt als gebucht.</p>
           <div class="f" style="margin-top:16px"><label for="bSal">Gehalt, das im ${mName(m)} schon aufs Privatkonto ging</label><div class="money"><input type="text" id="bSal" inputmode="decimal" value="${salPaid0?fmtIn(salPaid0):''}" placeholder="0"></div></div>
           <p class="hint" style="margin-bottom:0">Eingeplant sind ${eur(sal)}. Der Rest wird noch abgezogen.</p>
@@ -1147,20 +1217,19 @@ function rKonto(main){
       if(v('bMain').trim()===''){const e=sh.querySelector('#bMain'); e.focus(); e.scrollIntoView({block:'center'}); return;}
       const exp0=st.month?planExpected(formPaid(),Math.max(0,n('bSal'))):null, act0=n('bMain'), diff0=exp0==null?null:Math.round(act0-exp0);
       if(diff0!=null&&Math.abs(diff0)>=1){S.recon=(S.recon||[]).concat([{date:today(),since:st.asOf||null,expected:Math.round(exp0),actual:Math.round(act0),diff:diff0}]).slice(-24);}
-      const main=n('bMain'), ust=v('bUst').trim()===''?null:n('bUst'), est=v('bEst').trim()===''?null:n('bEst');
-      S.settings.dispo=Math.abs(n('bDispo'));
+      const main=n('bMain'), ust=st.ust??null, est=v('bEst').trim()===''?null:n('bEst');
       roll.forEach((r,i)=>{const c=chipVal('rl'+i), o=r.o;
         if(r.t==='f'){S.paidFixed[r.key]=true; if(c==='come') S.extras.push({id:uid(),name:`${o.name} (${MN[mIdx(r.mm)%12]})`,amount:+o.amount,kind:o.kind,cat:o.kind==='in'?'job':o.cat,vat:!!o.vat,month:m,paid:false});}
         else if(c==='come') o.month=m; else o.paid=true;});
       sh.querySelectorAll('[data-cur]').forEach(cb=>{const r=cur[+cb.dataset.cur]; if(r.t==='f'){if(cb.checked)S.paidFixed[r.key]=true; else delete S.paidFixed[r.key];} else r.o.paid=cb.checked;});
       const done=[...fixedIn(m).filter(f=>S.paidFixed[keyF(f,m)]).map(f=>keyF(f,m)),...extrasIn(m).filter(x=>x.paid).map(keyX)];
-      S.start={month:m,asOf:today(),main,free:main,ust,est,tax:est??0,done,orig:done.slice(),salPaid:Math.max(0,n('bSal'))};
-      CUR=m; save(); setTab('monate'); render(); window.scrollTo({top:0}); toast(diff0!=null&&diff0<=-5?`Übernommen · ${eur(-diff0)} ohne Eintrag rausgegangen`:diff0!=null&&diff0>=5?`Übernommen · ${eur(diff0)} mehr als geplant`:'Kontostand übernommen');
+      const notYet=cur.filter((r,i)=>r.auto&&!sh.querySelector(`[data-cur="${i}"]`).checked).map(r=>r.key);
+      S.start={month:m,asOf:today(),main,free:main,ust,est,tax:est??0,done,orig:done.slice(),salPaid:Math.max(0,n('bSal')),notYet};
+      CUR=m; save(); setTab('ueberblick'); render(); window.scrollTo({top:0}); toast(diff0!=null&&diff0<=-5?`Übernommen · ${eur(-diff0)} ohne Eintrag rausgegangen`:diff0!=null&&diff0>=5?`Übernommen · ${eur(diff0)} mehr als geplant`:'Kontostand übernommen');
     },'Übernehmen');
   const upd=()=>{
-    const main=n('bMain'), d=Math.abs(n('bDispo'));
-    sh.querySelector('#bCalc').innerHTML=`Damit rechnet Geldfluss: <b class="${main<0?'neg':''}">${eurX(main)}</b>`+
-      (main<0?`<br><span style="color:var(--ink2)">Du bist im Dispo${d?`, Spielraum bis zum Limit: <b class="${d+main<0?'neg':''}">${eurX(d+main)}</b>`:''}.</span>`:d?`<br><span style="color:var(--ink2)">Mit Dispo hast du ${eurX(main+d)} Spielraum.</span>`:'');
+    const main=n('bMain');
+    sh.querySelector('#bCalc').innerHTML=`Damit rechnet Geldfluss: <b class="${main<0?'neg':''}">${eurX(main)}</b>`;
     const rb=sh.querySelector('#bRecon');
     if(rb){
       if(v('bMain').trim()===''){rb.innerHTML=`<b>Abgleich</b><span>Trag deinen Kontostand ein, dann siehst du, ob ${since} etwas ohne Eintrag rausgegangen ist.</span>`; rb.className='recon';}
@@ -1180,7 +1249,7 @@ function rKonto(main){
     sh.querySelector('#bTax').innerHTML=net?`Für deine abgehakten Einnahmen im ${mName(m)} gehören <b>${eurX(vat)}</b> aufs Umsatzsteuer- und <b>${eurX(rate*net)}</b> aufs Einkommensteuer-Konto. Schon verschoben?`:'Hak rechts ab, was schon eingegangen ist, dann siehst du hier, was auf die Unterkonten gehört.';
   };
   bindChips(upd);
-  ['bMain','bDispo','bSal'].forEach(i=>sh.querySelector('#'+i).addEventListener('input',upd));
+  ['bMain','bSal'].forEach(i=>sh.querySelector('#'+i).addEventListener('input',upd));
   sh.querySelectorAll('[data-cur]').forEach(cb=>cb.addEventListener('change',upd)); upd();
 }
 
@@ -1211,26 +1280,23 @@ function rSettings(main){
           <div class="chead"><h3>So rechnet Geldfluss</h3></div>
           <div class="f"><label for="tSal">Dein Gehalt pro Monat</label><div class="money"><input type="text" id="tSal" inputmode="decimal" value="${fmtIn(st.salary)}"></div></div>
           <p class="hint">Was du dir fürs Leben nimmst: Essen, Ausgehen, Alltag. Miete und Krankenkasse trägst du unter „Fix" als Privat-Kosten ein.</p>
+          <div class="f"><label for="tMin">Davon mindestens zum Leben</label><div class="money"><input type="text" id="tMin" inputmode="decimal" value="${st.minimum?fmtIn(st.minimum):''}" placeholder="0"></div></div>
+          <p class="hint">Das brauchst du auch im schlechtesten Monat, etwa für Essen. Es gehört wie die Miete zum Polster: Geldfluss sorgt dafür, dass es am Monatsende für den nächsten Monat da ist. Der Rest deines Gehalts ist flexibel.</p>
           <div class="f"><label for="tRate">Steuerrücklage in Prozent vom Gewinn</label><input type="text" id="tRate" inputmode="decimal" value="${fmtIn(st.taxRate)}"></div>
           <p class="hint">20 bis 30 % sind für die meisten Freelancer ein sicherer Wert. Frag im Zweifel deine Steuerberatung.</p>
           ${sw('tVat','Ich stelle Rechnungen mit MwSt',st.vatOn,'Aus, wenn du Kleinunternehmer bist')}
-          <div class="three">
-            <div class="f"><label for="tPol">Polster</label><div class="money"><input type="text" id="tPol" inputmode="decimal" value="${fmtIn(st.polster)}" placeholder="${S.start.month?String(polster()):'0'}"></div></div>
-            <div class="f"><label for="tSafe">Gehalt absichern</label><select id="tSafe">${[3,6,9,12].map(k=>`<option value="${k}" ${+(st.safeMonths||6)===k?'selected':''}>${k} Monate</option>`).join('')}</select></div>
-            <div class="f"><label for="tHor">Vorschau</label><select id="tHor">${[12,18,24].map(k=>`<option value="${k}" ${+st.horizon===k?'selected':''}>${k} Monate</option>`).join('')}</select></div>
-          </div>
-          <p class="hint" style="margin-bottom:0">Polster: So viel soll am Monatsende mindestens auf dem Konto sein. Leer heißt: die Fixkosten des nächsten Monats. „Gehalt absichern" legt fest, wie viele Monate „Gehalt möglich" vorausschaut.</p>
+          <p class="hint" style="margin-bottom:0">Dein Polster rechnet Geldfluss selbst aus: Fixkosten eines Monats plus dein Minimum, gerade <b>${eur(polster())}</b>.</p>
+
         </section>
       </div>
     </div>`,()=>{
       st.name=v('tName').trim(); st.theme=chipVal('tTheme'); applyTheme(st.theme); st.salary=n('tSal'); st.taxRate=n('tRate'); st.vatOn=ck('tVat');
-      const p=v('tPol').trim(); st.polster=p===''?null:parseNum(p);
-      st.horizon=+v('tHor'); st.safeMonths=+v('tSafe'); save(); render(); toast('Gespeichert');
+      st.minimum=Math.max(0,n('tMin')); save(); render(); toast('Gespeichert');
     },'Speichern');
   bindChips(()=>applyTheme(chipVal('tTheme')));
   sh.querySelector('#exp').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(S,(k,v)=>k==='_open'?undefined:v,2)],{type:'application/json'}));a.download='geldfluss-backup-'+today()+'.json';a.click();};
   sh.querySelector('#imp').onchange=e=>{const file=e.target.files[0];if(!file)return;const rd=new FileReader();rd.onload=()=>{try{
-    S=importData(JSON.parse(rd.result)); normalize(); applyTheme(S.settings.theme); CUR=null; save(); setTab('monate'); render(); window.scrollTo({top:0}); toast('Backup geladen');
+    S=importData(JSON.parse(rd.result)); normalize(); applyTheme(S.settings.theme); CUR=null; save(); setTab('ueberblick'); render(); window.scrollTo({top:0}); toast('Backup geladen');
   }catch(err){alert('Diese Datei ist kein Geldfluss-Backup.');}};rd.readAsText(file);};
   sh.querySelector('#reset').onclick=()=>{if(confirm(sy?'Wirklich alles löschen? Auch in der Cloud, also auf allen Geräten.':'Wirklich alles löschen?')){S=blank();CUR=null;save();setTab('konto');render();}};
   const sn=sh.querySelector('#syncNow'); if(sn) sn.onclick=()=>{SyncRef.pull(); toast('Wird abgeglichen …');};
